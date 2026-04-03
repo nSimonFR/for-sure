@@ -6,23 +6,49 @@ Usage:
   python3 batch_import.py current 2025  # imports all current_2025_*.csv
   python3 batch_import.py savings 2025  # imports all savings_2025_*.csv
   python3 batch_import.py all 2025      # imports both accounts
+
+Environment variables:
+  SURE_API_KEY   Sure API key (or place in ~/.sure-api-key)
+  SURE_BASE_URL  Base URL of Sure instance (default: http://127.0.0.1:13334)
+  SUMERIA_DIR    Directory containing Sumeria CSV files
+  SURE_ACCOUNTS  JSON mapping of account kind to [id, name] (overrides defaults)
 """
-import json, urllib.request, subprocess, sys, os, glob
+import json, urllib.request, subprocess, sys, os, glob, shutil
 sys.path.insert(0, os.path.dirname(__file__))
 import lydia_csv_to_sure as conv
 import importlib; importlib.reload(conv)
 
-TOKEN = open(os.path.expanduser("~/.sure-api-key")).read().strip() if os.path.exists(os.path.expanduser("~/.sure-api-key")) else "70ccdab5ae24cd65942494c3c29e80c974285de780d24cbfc2a2157d6983e00e"
-BASE = "http://127.0.0.1:13334"
-DIR = "/mnt/cloud/Administrative/Sumeria"
-RUNNER = "/nix/store/zawiykbh50lj54xqpc0j62im14rdzy12-sure-0.6.8/bin/sure-rails"
+def _require_env(name, fallback_file=None):
+    val = os.environ.get(name)
+    if val:
+        return val
+    if fallback_file and os.path.exists(os.path.expanduser(fallback_file)):
+        return open(os.path.expanduser(fallback_file)).read().strip()
+    raise SystemExit(f"Error: {name} not set and {fallback_file or 'no fallback'} not found")
+
+TOKEN = _require_env("SURE_API_KEY", "~/.sure-api-key")
+BASE = os.environ.get("SURE_BASE_URL", "http://127.0.0.1:13334")
+DIR = _require_env("SUMERIA_DIR")
 ENV_CMD = "set -a; . /run/agenix/sure-app-env; set +a; export DATABASE_URL=postgresql://sure_user@127.0.0.1/sure_production HOME=/var/lib/sure RAILS_ENV=production REDIS_URL=redis://127.0.0.1:6379/2"
 PUB_SCRIPT = os.path.join(os.path.dirname(__file__), "import_and_publish.rb")
 
-ACCOUNTS = {
-    "current": ("9c40c6c3-24c9-42fb-9c45-15ca46a842f3", "Sumeria - Current"),
-    "savings": ("6aa96f6d-de57-40a9-966b-7c719ca9366c", "Sumeria - Savings"),
+def _find_sure_rails():
+    # Prefer explicit env var, then PATH, then fail
+    runner = os.environ.get("SURE_RAILS")
+    if runner:
+        return runner
+    runner = shutil.which("sure-rails")
+    if runner:
+        return runner
+    raise SystemExit("Error: sure-rails not found. Set SURE_RAILS env var or add it to PATH.")
+
+RUNNER = _find_sure_rails()
+
+_default_accounts = {
+    "current": (os.environ.get("SURE_ACCOUNT_CURRENT_ID", ""), "Sumeria - Current"),
+    "savings": (os.environ.get("SURE_ACCOUNT_SAVINGS_ID", ""), "Sumeria - Savings"),
 }
+ACCOUNTS = json.loads(os.environ["SURE_ACCOUNTS"]) if "SURE_ACCOUNTS" in os.environ else _default_accounts
 
 def create_and_publish(account_id, account_name, csv_path, tag_name):
     csv_content = open(csv_path).read()
@@ -66,6 +92,8 @@ if __name__ == "__main__":
     kinds = ["current", "savings"] if kind_filter == "all" else [kind_filter]
     for kind in kinds:
         account_id, account_name = ACCOUNTS[kind]
+        if not account_id:
+            raise SystemExit(f"Error: account ID for '{kind}' not set. Use SURE_ACCOUNTS or SURE_ACCOUNT_{kind.upper()}_ID env var.")
         files = sorted(glob.glob(f"{DIR}/{kind}_{year_filter}_*.csv"))
         for fpath in files:
             out_path = fpath.replace(".csv", "_sure.csv").replace(DIR, "/tmp")

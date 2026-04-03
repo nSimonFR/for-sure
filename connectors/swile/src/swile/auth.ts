@@ -4,6 +4,8 @@ import { logger } from "../logger.js";
 import type { TokenData } from "./types.js";
 
 const SWILE_TOKEN_URL = "https://directory.swile.co/oauth/token";
+// Swile's public OAuth client_id, extracted from their web app JS bundle.
+// This is not account-specific — it identifies the Swile web client application.
 const SWILE_CLIENT_ID = "533bf5c8dbd05ef18fd01e2bbbab3d7f69e3511dd08402862b5de63b9a238923";
 const REFRESH_MARGIN_SEC = 60;
 
