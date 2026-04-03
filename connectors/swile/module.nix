@@ -42,6 +42,7 @@ in
         ExecStart = "${pkg}/bin/for-sure-swile";
         DynamicUser = true;
         StateDirectory = "for-sure-swile";
+        LoadCredential = "api-key:${cfg.apiKeyFile}";
         Restart = "on-failure";
         RestartSec = "10";
       };
@@ -50,7 +51,8 @@ in
         PORT = toString cfg.port;
         HOST = cfg.host;
         SWILE_TOKEN_FILE = "${cfg.dataDir}/tokens.json";
-        SWILE_API_KEY_FILE = cfg.apiKeyFile;
+        # CREDENTIALS_DIRECTORY is set by systemd; config.ts resolves the full path
+        SWILE_API_KEY_FILE = "api-key";
       };
     };
   };
