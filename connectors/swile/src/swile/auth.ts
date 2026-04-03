@@ -39,8 +39,8 @@ async function parseAndSaveTokens(res: Response, context: string): Promise<Token
 function swileTokenRequest(body: Record<string, string>): Promise<Response> {
   return fetch(SWILE_TOKEN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: SWILE_CLIENT_ID, ...body }).toString(),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
   });
 }
 
@@ -100,13 +100,13 @@ export async function authenticateWithPassword(
 export async function authenticateWithOtp(
   email: string,
   password: string,
-  code: string,
+  otp: string,
 ): Promise<void> {
   const res = await swileTokenRequest({
     grant_type: "password",
     username: email,
     password,
-    authentication_code: code,
+    otp,
   });
   await parseAndSaveTokens(res, "OTP authentication failed");
 }
