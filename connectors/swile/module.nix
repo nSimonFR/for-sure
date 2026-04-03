@@ -35,10 +35,12 @@ in
     users.users.for-sure-swile = {
       isSystemUser = true;
       group = "for-sure-swile";
-      home = cfg.dataDir;
-      createHome = true;
     };
     users.groups.for-sure-swile = {};
+
+    systemd.tmpfiles.rules = [
+      "d ${cfg.dataDir} 0700 for-sure-swile for-sure-swile - -"
+    ];
 
     systemd.services.for-sure-swile = {
       description = "for-sure-swile Lunchflow connector for Swile";
@@ -52,6 +54,7 @@ in
         Group = "for-sure-swile";
         Restart = "on-failure";
         RestartSec = "10";
+        ReadWritePaths = [ cfg.dataDir ];
       };
 
       environment = {
