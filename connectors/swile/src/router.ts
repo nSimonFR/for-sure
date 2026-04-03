@@ -17,10 +17,10 @@ export async function route(method: string, pathname: string): Promise<RouteResu
   if (path === "/accounts") {
     const wallets = await getWallets();
     const accounts = wallets
-      .filter((w) => w.status === "active" && w.type === "meal_voucher")
+      .filter((w) => w.type === "meal_voucher" && w.is_activated && !w.archived_at)
       .map((w) => ({
         id: w.id,
-        name: w.name,
+        name: w.label,
         balance: w.balance.value,
         currency: w.balance.currency.iso_3,
       }));

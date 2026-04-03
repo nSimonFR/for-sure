@@ -1,8 +1,9 @@
 export interface SwileWallet {
   id: string;
-  name: string;
+  label: string;
   type: string;
-  status: string;
+  is_activated: boolean;
+  archived_at: string | null;
   balance: {
     value: number;
     currency: { iso_3: string };
