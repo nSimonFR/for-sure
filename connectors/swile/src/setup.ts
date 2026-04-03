@@ -24,7 +24,7 @@ export async function runSetup(): Promise<void> {
     const result = await authenticateWithPassword(email, password);
 
     if (result.requires_otp) {
-      console.log("Swile has sent an OTP to your phone.");
+      console.log("Swile has sent a code to your email.");
       const otp = await prompt(rl, "Enter OTP: ");
 
       console.log("Verifying OTP...");
