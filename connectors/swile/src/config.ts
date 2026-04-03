@@ -9,6 +9,7 @@ export const config = {
   host: process.env.HOST || "127.0.0.1",
   tokenFile: process.env.SWILE_TOKEN_FILE || "/var/lib/for-sure-swile/tokens.json",
   apiKeyFile: apiKeyFile.startsWith("/") ? apiKeyFile : credDir ? resolve(credDir, apiKeyFile) : "",
+  accountName: process.env.SWILE_ACCOUNT_NAME || null,
 };
 
 let cachedApiKey: string | null = null;
