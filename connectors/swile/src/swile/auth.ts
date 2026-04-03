@@ -4,23 +4,11 @@ import { logger } from "../logger.js";
 import type { TokenData } from "./types.js";
 
 const SWILE_TOKEN_URL = "https://directory.swile.co/oauth/token";
-const SWILE_CLIENT_ID = "swile_app";
+const SWILE_CLIENT_ID = "533bf5c8dbd05ef18fd01e2bbbab3d7f69e3511dd08402862b5de63b9a238923";
 const REFRESH_MARGIN_SEC = 60;
 
 let cachedTokens: TokenData | null = null;
 let refreshPromise: Promise<TokenData> | null = null;
-
-export async function saveTokensFromSetup(data: {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-}): Promise<void> {
-  await saveTokens({
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-  });
-}
 
 async function saveTokens(tokens: TokenData): Promise<void> {
   const tmp = config.tokenFile + ".tmp";
@@ -70,6 +58,34 @@ function swileTokenRequest(body: Record<string, string>): Promise<Response> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
   });
+}
+
+export async function authenticateWithPassword(
+  email: string,
+  password: string,
+): Promise<{ requires_otp: boolean }> {
+  const res = await swileTokenRequest({ grant_type: "password", username: email, password });
+  if (!res.ok) {
+    const body = (await res.json()) as { error?: string };
+    if (body.error === "missing_authentication_code") return { requires_otp: true };
+    throw new Error(`Authentication failed (${res.status}): ${JSON.stringify(body)}`);
+  }
+  await parseAndSaveTokens(res, "Authentication failed");
+  return { requires_otp: false };
+}
+
+export async function authenticateWithOtp(
+  email: string,
+  password: string,
+  code: string,
+): Promise<void> {
+  const res = await swileTokenRequest({
+    grant_type: "password",
+    username: email,
+    password,
+    authentication_code: code,
+  });
+  await parseAndSaveTokens(res, "OTP authentication failed");
 }
 
 export async function refreshTokens(tokens?: TokenData): Promise<TokenData> {
