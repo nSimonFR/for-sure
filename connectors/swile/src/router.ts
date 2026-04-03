@@ -38,7 +38,7 @@ export async function route(method: string, pathname: string): Promise<RouteResu
       .filter((op) =>
         op.transactions.some(
           (t) =>
-            t.wallet.uuid === accountId &&
+            t.wallet?.uuid === accountId &&
             (t.status === "CAPTURED" || t.status === "VALIDATED"),
         ),
       )
