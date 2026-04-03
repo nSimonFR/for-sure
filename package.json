@@ -1,0 +1,5 @@
+{
+  "name": "for-sure",
+  "private": true,
+  "workspaces": ["packages/*", "connectors/*"]
+}
