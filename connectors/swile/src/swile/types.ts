@@ -20,7 +20,7 @@ export interface SwileOperation {
   };
   transactions: Array<{
     status: string;
-    wallet: { uuid: string };
+    wallet: { uuid: string } | null;
   }>;
 }
 
