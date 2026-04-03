@@ -40,14 +40,14 @@ export async function route(method: string, pathname: string): Promise<RouteResu
         op.transactions.some(
           (t) =>
             t.wallet?.uuid === accountId &&
-            (t.status === "CAPTURED" || t.status === "VALIDATED"),
+            (t.status === "CAPTURED" || t.status === "VALIDATED" || t.status === "REFUNDED"),
         ),
       )
       .map((op) => ({
         id: op.id,
         merchant: op.name,
         date: op.date,
-        amount: op.amount.value / 100, // cents → EUR
+        amount: op.amount.value / 100,
         currency: op.amount.currency.iso_3,
         isPending: false,
       }));
@@ -60,7 +60,7 @@ export async function route(method: string, pathname: string): Promise<RouteResu
     if (!wallet) return { status: 404, body: { error: "Account not found" } };
     return {
       status: 200,
-      body: { balance: wallet.balance.value, currency: wallet.balance.currency.iso_3 },
+      body: { balance: { amount: wallet.balance.value, currency: wallet.balance.currency.iso_3 } },
     };
   }
 
