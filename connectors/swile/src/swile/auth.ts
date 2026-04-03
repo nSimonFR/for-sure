@@ -39,8 +39,8 @@ async function parseAndSaveTokens(res: Response, context: string): Promise<Token
 function swileTokenRequest(body: Record<string, string>): Promise<Response> {
   return fetch(SWILE_TOKEN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: SWILE_CLIENT_ID, ...body }).toString(),
   });
 }
 
