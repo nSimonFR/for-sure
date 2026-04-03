@@ -44,10 +44,11 @@ export async function route(method: string, pathname: string): Promise<RouteResu
       )
       .map((op) => ({
         id: op.id,
-        name: op.name,
+        merchant: op.name,
         date: op.date,
         amount: op.amount.value / 100, // cents → EUR
         currency: op.amount.currency.iso_3,
+        isPending: false,
       }));
     return { status: 200, body: { transactions } };
   }
