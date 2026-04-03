@@ -1,5 +1,3 @@
-// Swile API response types
-
 export interface SwileWallet {
   id: string;
   name: string;
@@ -7,20 +5,7 @@ export interface SwileWallet {
   status: string;
   balance: {
     value: number;
-    currency: {
-      iso_3: string;
-    };
-  };
-}
-
-export interface SwileWalletsResponse {
-  wallets: SwileWallet[];
-}
-
-export interface SwileAmount {
-  value: number;
-  currency: {
-    iso_3: string;
+    currency: { iso_3: string };
   };
 }
 
@@ -29,17 +14,16 @@ export interface SwileOperation {
   name: string;
   date: string;
   status: string;
-  amount: SwileAmount;
+  amount: {
+    value: number;
+    currency: { iso_3: string };
+  };
   wallet_id: string;
   category?: string;
-}
-
-export interface SwileOperationsResponse {
-  operations: SwileOperation[];
 }
 
 export interface TokenData {
   access_token: string;
   refresh_token: string;
-  expires_at: number; // epoch seconds
+  expires_at: number;
 }

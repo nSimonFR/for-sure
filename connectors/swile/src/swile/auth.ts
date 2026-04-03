@@ -10,13 +10,6 @@ const REFRESH_MARGIN_SEC = 60;
 let cachedTokens: TokenData | null = null;
 let refreshPromise: Promise<TokenData> | null = null;
 
-export async function loadTokens(): Promise<TokenData> {
-  if (cachedTokens) return cachedTokens;
-  const raw = await readFile(config.tokenFile, "utf-8");
-  cachedTokens = JSON.parse(raw) as TokenData;
-  return cachedTokens;
-}
-
 async function saveTokens(tokens: TokenData): Promise<void> {
   const tmp = config.tokenFile + ".tmp";
   await writeFile(tmp, JSON.stringify(tokens, null, 2), "utf-8");
@@ -24,101 +17,77 @@ async function saveTokens(tokens: TokenData): Promise<void> {
   cachedTokens = tokens;
 }
 
-async function doRefresh(tokens: TokenData): Promise<TokenData> {
-  logger.info("Refreshing Swile access token");
-  const res = await fetch(SWILE_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      refresh_token: tokens.refresh_token,
-      client_id: SWILE_CLIENT_ID,
-    }),
-  });
-
+async function parseAndSaveTokens(res: Response, context: string): Promise<TokenData> {
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Token refresh failed (${res.status}): ${body}`);
+    throw new Error(`${context} (${res.status}): ${body}`);
   }
-
   const data = (await res.json()) as {
     access_token: string;
     refresh_token: string;
     expires_in: number;
   };
-
-  const newTokens: TokenData = {
+  const tokens: TokenData = {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
   };
+  await saveTokens(tokens);
+  return tokens;
+}
 
-  await saveTokens(newTokens);
-  logger.info("Token refreshed and saved");
-  return newTokens;
+function swileTokenRequest(body: Record<string, string>): Promise<Response> {
+  return fetch(SWILE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
+  });
+}
+
+export async function loadTokens(): Promise<TokenData> {
+  if (cachedTokens) return cachedTokens;
+  const raw = await readFile(config.tokenFile, "utf-8");
+  cachedTokens = JSON.parse(raw) as TokenData;
+  return cachedTokens;
 }
 
 export async function getAccessToken(): Promise<string> {
   let tokens = await loadTokens();
   const now = Math.floor(Date.now() / 1000);
-
   if (tokens.expires_at - now < REFRESH_MARGIN_SEC) {
     tokens = await refreshTokens(tokens);
   }
-
   return tokens.access_token;
 }
 
 export async function refreshTokens(tokens?: TokenData): Promise<TokenData> {
   if (refreshPromise) return refreshPromise;
-
   const current = tokens || (await loadTokens());
-  refreshPromise = doRefresh(current).finally(() => {
-    refreshPromise = null;
-  });
-
+  refreshPromise = (async () => {
+    logger.info("Refreshing Swile access token");
+    const res = await swileTokenRequest({
+      grant_type: "refresh_token",
+      refresh_token: current.refresh_token,
+    });
+    const t = await parseAndSaveTokens(res, "Token refresh failed");
+    logger.info("Token refreshed and saved");
+    return t;
+  })().finally(() => { refreshPromise = null; });
   return refreshPromise;
 }
 
-// For initial setup - exchange credentials for tokens
+// Setup-only: exchange credentials for tokens
 export async function authenticateWithPassword(
   email: string,
   password: string,
 ): Promise<{ requires_otp: boolean }> {
-  const res = await fetch(SWILE_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "password",
-      client_id: SWILE_CLIENT_ID,
-      username: email,
-      password: password,
-    }),
+  const res = await swileTokenRequest({
+    grant_type: "password",
+    username: email,
+    password,
   });
-
-  if (res.status === 403) {
-    // OTP required - Swile sends it via SMS
-    return { requires_otp: true };
-  }
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Authentication failed (${res.status}): ${body}`);
-  }
-
-  const data = (await res.json()) as {
-    access_token: string;
-    refresh_token: string;
-    expires_in: number;
-  };
-
-  const newTokens: TokenData = {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-  };
-
-  await saveTokens(newTokens);
+  if (res.status === 403) return { requires_otp: true };
+  await parseAndSaveTokens(res, "Authentication failed");
   return { requires_otp: false };
 }
 
@@ -127,34 +96,11 @@ export async function authenticateWithOtp(
   password: string,
   otp: string,
 ): Promise<void> {
-  const res = await fetch(SWILE_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "password",
-      client_id: SWILE_CLIENT_ID,
-      username: email,
-      password: password,
-      otp: otp,
-    }),
+  const res = await swileTokenRequest({
+    grant_type: "password",
+    username: email,
+    password,
+    otp,
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`OTP authentication failed (${res.status}): ${body}`);
-  }
-
-  const data = (await res.json()) as {
-    access_token: string;
-    refresh_token: string;
-    expires_in: number;
-  };
-
-  const newTokens: TokenData = {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-  };
-
-  await saveTokens(newTokens);
+  await parseAndSaveTokens(res, "OTP authentication failed");
 }

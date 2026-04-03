@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { config } from "./config.js";
+import { config, getApiKey } from "./config.js";
 import { logger } from "./logger.js";
 import { route } from "./router.js";
 
@@ -7,10 +7,10 @@ export function startServer(): void {
   const server = createServer(async (req, res) => {
     const start = Date.now();
 
-    // API key authentication
-    if (config.apiKey) {
+    const apiKey = await getApiKey();
+    if (apiKey) {
       const provided = req.headers["x-api-key"];
-      if (provided !== config.apiKey) {
+      if (provided !== apiKey) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
         return;
@@ -19,7 +19,7 @@ export function startServer(): void {
 
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      const result = await route(req.method || "GET", url.pathname, url.searchParams);
+      const result = await route(req.method || "GET", url.pathname);
 
       res.writeHead(result.status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(result.body));
