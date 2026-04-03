@@ -35,10 +35,12 @@ export async function route(method: string, pathname: string): Promise<RouteResu
   if (action === "transactions") {
     const operations = await getOperations();
     const transactions = operations
-      .filter(
-        (op) =>
-          op.wallet_id === accountId &&
-          (op.status === "CAPTURED" || op.status === "VALIDATED"),
+      .filter((op) =>
+        op.transactions.some(
+          (t) =>
+            t.wallet.uuid === accountId &&
+            (t.status === "CAPTURED" || t.status === "VALIDATED"),
+        ),
       )
       .map((op) => ({
         id: op.id,
@@ -46,7 +48,6 @@ export async function route(method: string, pathname: string): Promise<RouteResu
         date: op.date,
         amount: op.amount.value / 100, // cents → EUR
         currency: op.amount.currency.iso_3,
-        category: op.category || null,
       }));
     return { status: 200, body: { transactions } };
   }

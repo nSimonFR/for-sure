@@ -31,7 +31,7 @@ export async function getWallets(): Promise<SwileWallet[]> {
 
 export async function getOperations(): Promise<SwileOperation[]> {
   const data = (await swileFetch("/v3/user/operations?per=999999")) as {
-    operations: SwileOperation[];
+    items: SwileOperation[];
   };
-  return data.operations;
+  return data.items;
 }

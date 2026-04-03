@@ -14,13 +14,14 @@ export interface SwileOperation {
   id: string;
   name: string;
   date: string;
-  status: string;
   amount: {
     value: number;
     currency: { iso_3: string };
   };
-  wallet_id: string;
-  category?: string;
+  transactions: Array<{
+    status: string;
+    wallet: { uuid: string };
+  }>;
 }
 
 export interface TokenData {
