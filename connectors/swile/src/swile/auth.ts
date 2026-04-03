@@ -10,6 +10,18 @@ const REFRESH_MARGIN_SEC = 60;
 let cachedTokens: TokenData | null = null;
 let refreshPromise: Promise<TokenData> | null = null;
 
+export async function saveTokensFromSetup(data: {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}): Promise<void> {
+  await saveTokens({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+  });
+}
+
 async function saveTokens(tokens: TokenData): Promise<void> {
   const tmp = config.tokenFile + ".tmp";
   await writeFile(tmp, JSON.stringify(tokens, null, 2), "utf-8");
@@ -36,14 +48,6 @@ async function parseAndSaveTokens(res: Response, context: string): Promise<Token
   return tokens;
 }
 
-function swileTokenRequest(body: Record<string, string>): Promise<Response> {
-  return fetch(SWILE_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
-  });
-}
-
 export async function loadTokens(): Promise<TokenData> {
   if (cachedTokens) return cachedTokens;
   const raw = await readFile(config.tokenFile, "utf-8");
@@ -58,6 +62,14 @@ export async function getAccessToken(): Promise<string> {
     tokens = await refreshTokens(tokens);
   }
   return tokens.access_token;
+}
+
+function swileTokenRequest(body: Record<string, string>): Promise<Response> {
+  return fetch(SWILE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: SWILE_CLIENT_ID, ...body }),
+  });
 }
 
 export async function refreshTokens(tokens?: TokenData): Promise<TokenData> {
@@ -76,37 +88,3 @@ export async function refreshTokens(tokens?: TokenData): Promise<TokenData> {
   return refreshPromise;
 }
 
-// Setup-only: exchange credentials for tokens.
-// Swile responds with 400 + {"error":"missing_authentication_code"} and sends
-// an OTP to the user's email — not a 403.
-export async function authenticateWithPassword(
-  email: string,
-  password: string,
-): Promise<{ requires_otp: boolean }> {
-  const res = await swileTokenRequest({
-    grant_type: "password",
-    username: email,
-    password,
-  });
-  if (!res.ok) {
-    const body = (await res.json()) as { error?: string };
-    if (body.error === "missing_authentication_code") return { requires_otp: true };
-    throw new Error(`Authentication failed (${res.status}): ${JSON.stringify(body)}`);
-  }
-  await parseAndSaveTokens(res, "Authentication failed");
-  return { requires_otp: false };
-}
-
-export async function authenticateWithOtp(
-  email: string,
-  password: string,
-  otp: string,
-): Promise<void> {
-  const res = await swileTokenRequest({
-    grant_type: "password",
-    username: email,
-    password,
-    otp,
-  });
-  await parseAndSaveTokens(res, "OTP authentication failed");
-}
