@@ -29,6 +29,12 @@ in
       type = lib.types.str;
       description = "Path to file containing the API key for authentication";
     };
+
+    accountName = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the account name shown in Sure (defaults to wallet label from Swile)";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -62,6 +68,8 @@ in
         HOST = cfg.host;
         SWILE_TOKEN_FILE = "${cfg.dataDir}/tokens.json";
         SWILE_API_KEY_FILE = cfg.apiKeyFile;
+      } // lib.optionalAttrs (cfg.accountName != null) {
+        SWILE_ACCOUNT_NAME = cfg.accountName;
       };
     };
   };

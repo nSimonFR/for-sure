@@ -1,4 +1,5 @@
 import { getWallets, getOperations } from "./swile/client.js";
+import { config } from "./config.js";
 
 const PREFIX = "/api/v1";
 
@@ -20,7 +21,7 @@ export async function route(method: string, pathname: string): Promise<RouteResu
       .filter((w) => w.type === "meal_voucher" && w.is_activated && !w.archived_at)
       .map((w) => ({
         id: w.id,
-        name: w.label,
+        name: config.accountName ?? w.label,
         balance: w.balance.value,
         currency: w.balance.currency.iso_3,
       }));
