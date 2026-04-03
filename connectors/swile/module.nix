@@ -32,6 +32,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    users.users.for-sure-swile = {
+      isSystemUser = true;
+      group = "for-sure-swile";
+      home = cfg.dataDir;
+      createHome = true;
+    };
+    users.groups.for-sure-swile = {};
+
     systemd.services.for-sure-swile = {
       description = "for-sure-swile Lunchflow connector for Swile";
       wantedBy = [ "multi-user.target" ];
@@ -40,9 +48,8 @@ in
 
       serviceConfig = {
         ExecStart = "${pkg}/bin/for-sure-swile";
-        DynamicUser = true;
-        StateDirectory = "for-sure-swile";
-        LoadCredential = "api-key:${cfg.apiKeyFile}";
+        User = "for-sure-swile";
+        Group = "for-sure-swile";
         Restart = "on-failure";
         RestartSec = "10";
       };
@@ -51,8 +58,7 @@ in
         PORT = toString cfg.port;
         HOST = cfg.host;
         SWILE_TOKEN_FILE = "${cfg.dataDir}/tokens.json";
-        # CREDENTIALS_DIRECTORY is set by systemd; config.ts resolves the full path
-        SWILE_API_KEY_FILE = "api-key";
+        SWILE_API_KEY_FILE = cfg.apiKeyFile;
       };
     };
   };

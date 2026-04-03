@@ -76,7 +76,9 @@ export async function refreshTokens(tokens?: TokenData): Promise<TokenData> {
   return refreshPromise;
 }
 
-// Setup-only: exchange credentials for tokens
+// Setup-only: exchange credentials for tokens.
+// Swile responds with 400 + {"error":"missing_authentication_code"} and sends
+// an OTP to the user's email — not a 403.
 export async function authenticateWithPassword(
   email: string,
   password: string,
@@ -86,7 +88,11 @@ export async function authenticateWithPassword(
     username: email,
     password,
   });
-  if (res.status === 403) return { requires_otp: true };
+  if (!res.ok) {
+    const body = (await res.json()) as { error?: string };
+    if (body.error === "missing_authentication_code") return { requires_otp: true };
+    throw new Error(`Authentication failed (${res.status}): ${JSON.stringify(body)}`);
+  }
   await parseAndSaveTokens(res, "Authentication failed");
   return { requires_otp: false };
 }
@@ -94,13 +100,13 @@ export async function authenticateWithPassword(
 export async function authenticateWithOtp(
   email: string,
   password: string,
-  otp: string,
+  code: string,
 ): Promise<void> {
   const res = await swileTokenRequest({
     grant_type: "password",
     username: email,
     password,
-    otp,
+    authentication_code: code,
   });
   await parseAndSaveTokens(res, "OTP authentication failed");
 }
