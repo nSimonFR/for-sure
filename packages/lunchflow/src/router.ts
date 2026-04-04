@@ -18,7 +18,8 @@ export function createRouter(handlers: LunchflowHandlers) {
     const match = path.match(/^\/accounts\/([^/]+)\/(transactions|balance|holdings)$/);
     if (!match) return { status: 404, body: { error: "Not found" } };
 
-    const [, accountId, action] = match;
+    const [, rawAccountId, action] = match;
+    const accountId = decodeURIComponent(rawAccountId);
 
     if (action === "transactions") {
       const transactions = await handlers.getTransactions(accountId);
