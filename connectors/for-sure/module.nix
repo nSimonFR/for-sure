@@ -130,6 +130,6 @@ in
       environment.SUMERIA_TOKEN_FILE = "${cfg.dataDir}/sumeria-tokens.json";
     };
 
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.mitm.enable [ cfg.mitm.port ];
+    networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf cfg.mitm.enable [ cfg.mitm.port ];
   };
 }
