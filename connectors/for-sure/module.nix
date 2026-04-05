@@ -132,12 +132,15 @@ in
       };
     };
 
-    # Sumeria-specific MITM service: captures session tokens when the Sumeria iOS app
-    # makes requests, so for-sure can use them without manual intervention.
-    # TODO(sumeria-mitm): requires iPhone HTTP proxy set to <this-host>:${mitm.port} and
-    # the mitmproxy CA installed + trusted on the device (visit http://mitm.it via proxy).
+    # Sumeria-specific MITM service: transparent proxy on tailscale0.
+    # When the iPhone uses the RPi5 as a Tailscale exit node, all its traffic is routed
+    # here. The iptables REDIRECT rule below intercepts port 443 → mitmproxy, which
+    # extracts Sumeria tokens and passes everything else through untouched (TCP tunnel
+    # via ignore-hosts). No proxy config needed on the phone — just enable exit node once.
+    # TODO(sumeria-mitm): mitmproxy CA must be installed + trusted on the iPhone.
+    # TODO(sumeria-mitm): exit node must be approved in Tailscale admin console.
     systemd.services.for-sure-mitm = lib.mkIf cfg.mitm.enable {
-      description = "Sumeria token auto-extractor (mitmproxy)";
+      description = "Sumeria token auto-extractor (mitmproxy transparent)";
       wantedBy    = [ "multi-user.target" ];
       after       = [ "network-online.target" ];
       wants       = [ "network-online.target" ];
@@ -145,10 +148,11 @@ in
       serviceConfig = {
         ExecStart = lib.concatStringsSep " " [
           "${pkgs.mitmproxy}/bin/mitmdump"
-          "--mode regular"
+          "--mode transparent"
           "-p ${toString cfg.mitm.port}"
           "--ignore-hosts '(?!api\\.lydia-app\\.com).*'"
           "--set confdir=${cfg.dataDir}/mitmproxy"
+          "--set block_global=false"
           "-s ${tokenExtractor}"
         ];
         User           = "for-sure";
@@ -156,11 +160,19 @@ in
         Restart        = "on-failure";
         RestartSec     = "5";
         ReadWritePaths = [ cfg.dataDir ];
+        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
       };
 
       environment.SUMERIA_TOKEN_FILE = "${cfg.dataDir}/sumeria-tokens.json";
     };
 
-    networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkIf cfg.mitm.enable [ cfg.mitm.port ];
+    # Redirect all HTTPS from Tailscale clients → mitmproxy (transparent interception).
+    # Only applies when iPhone (or another device) uses the RPi5 as a Tailscale exit node.
+    networking.firewall.extraCommands = lib.mkIf cfg.mitm.enable ''
+      iptables -t nat -A PREROUTING -i tailscale0 -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port}
+    '';
+    networking.firewall.extraStopCommands = lib.mkIf cfg.mitm.enable ''
+      iptables -t nat -D PREROUTING -i tailscale0 -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port} || true
+    '';
   };
 }
