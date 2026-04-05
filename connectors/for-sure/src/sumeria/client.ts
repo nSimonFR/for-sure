@@ -1,4 +1,5 @@
 import { loadTokens } from "./auth.js";
+import { sendTelegram } from "../notify.js";
 import type { SumeriaAccount, SumeriaTransaction } from "./types.js";
 
 const BASE = "https://api.lydia-app.com";
@@ -22,8 +23,15 @@ async function suteriaFetch(path: string, init?: RequestInit): Promise<unknown> 
   });
 
   if (res.status === 401) {
+    // TODO(sumeria-mitm): tokens are static session headers captured via mitmproxy (no OAuth
+    // refresh). Renew by opening the Sumeria app with iPhone proxy → RPi5:8889 — the
+    // for-sure-mitm service will auto-write fresh tokens to sumeria-tokens.json.
+    await sendTelegram(
+      "⚠️ <b>for-sure / Sumeria</b>: tokens expired (401)\n" +
+      "Open the Sumeria app with iPhone proxy → RPi5:8889 to auto-refresh.",
+    );
     throw new Error(
-      "Sumeria 401: tokens expired — re-run `for-sure --setup sumeria` with fresh MITM tokens",
+      "Sumeria 401: tokens expired — open Sumeria app via MITM proxy to auto-refresh",
     );
   }
   if (!res.ok) {

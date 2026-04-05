@@ -9,6 +9,8 @@ export const config = {
   host: process.env.HOST || "127.0.0.1",
   dataDir: process.env.FOR_SURE_DATA_DIR || "/var/lib/for-sure",
   apiKeyFile: apiKeyFile.startsWith("/") ? apiKeyFile : credDir ? resolve(credDir, apiKeyFile) : "",
+  telegramBotTokenFile: process.env.TELEGRAM_BOT_TOKEN_FILE || "",
+  telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
 };
 
 let cachedApiKey: string | null = null;

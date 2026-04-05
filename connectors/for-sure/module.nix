@@ -3,10 +3,19 @@ let
   cfg = config.services.for-sure;
   pkg = pkgs.callPackage ./package.nix {};
 
+  # Sumeria-specific: intercepts requests to api.lydia-app.com and extracts the three
+  # static session headers (auth_token / public_token / access-token) that Sumeria uses
+  # instead of OAuth. Tokens are written atomically to sumeria-tokens.json so the
+  # for-sure service picks them up on the next request without a restart.
+  #
+  # TODO(sumeria-mitm): these headers are undocumented and were discovered by MITM.
+  # If the Sumeria app changes its auth scheme this script needs to be updated.
   tokenExtractor = pkgs.writeText "sumeria-token-extractor.py" ''
     import json, os
     from mitmproxy import http
 
+    # TODO(sumeria-mitm): hardcoded to api.lydia-app.com (Sumeria/Lydia backend).
+    # Not a generic token extractor — do not reuse for other services.
     TOKEN_FILE = os.environ.get("SUMERIA_TOKEN_FILE", "/var/lib/for-sure/sumeria-tokens.json")
 
     class SumeriaTokenExtractor:
@@ -61,6 +70,20 @@ in
       description = "Override the account name shown in Sure (defaults to wallet label from Swile)";
     };
 
+    telegram = {
+      botTokenFile = lib.mkOption {
+        type        = lib.types.nullOr lib.types.str;
+        default     = null;
+        description = "Path to file containing the Telegram bot token (for token-expiry alerts)";
+      };
+
+      chatId = lib.mkOption {
+        type        = lib.types.nullOr lib.types.str;
+        default     = null;
+        description = "Telegram chat ID to send alerts to";
+      };
+    };
+
     mitm = {
       enable = lib.mkEnableOption "persistent mitmproxy service for Sumeria token auto-capture";
 
@@ -96,15 +119,23 @@ in
       };
 
       environment = {
-        PORT                 = toString cfg.port;
-        HOST                 = cfg.host;
-        FOR_SURE_DATA_DIR    = cfg.dataDir;
+        PORT                  = toString cfg.port;
+        HOST                  = cfg.host;
+        FOR_SURE_DATA_DIR     = cfg.dataDir;
         FOR_SURE_API_KEY_FILE = cfg.apiKeyFile;
       } // lib.optionalAttrs (cfg.swile.accountName != null) {
         SWILE_ACCOUNT_NAME = cfg.swile.accountName;
+      } // lib.optionalAttrs (cfg.telegram.botTokenFile != null) {
+        TELEGRAM_BOT_TOKEN_FILE = cfg.telegram.botTokenFile;
+      } // lib.optionalAttrs (cfg.telegram.chatId != null) {
+        TELEGRAM_CHAT_ID = cfg.telegram.chatId;
       };
     };
 
+    # Sumeria-specific MITM service: captures session tokens when the Sumeria iOS app
+    # makes requests, so for-sure can use them without manual intervention.
+    # TODO(sumeria-mitm): requires iPhone HTTP proxy set to <this-host>:${mitm.port} and
+    # the mitmproxy CA installed + trusted on the device (visit http://mitm.it via proxy).
     systemd.services.for-sure-mitm = lib.mkIf cfg.mitm.enable {
       description = "Sumeria token auto-extractor (mitmproxy)";
       wantedBy    = [ "multi-user.target" ];
