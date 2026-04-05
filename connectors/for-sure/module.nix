@@ -155,12 +155,13 @@ in
           "--set block_global=false"
           "-s ${tokenExtractor}"
         ];
-        User           = "for-sure";
-        Group          = "for-sure";
-        Restart        = "on-failure";
-        RestartSec     = "5";
-        ReadWritePaths = [ cfg.dataDir ];
+        User               = "for-sure";
+        Group              = "for-sure";
+        Restart            = "on-failure";
+        RestartSec         = "5";
+        ReadWritePaths     = [ cfg.dataDir ];
         AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+        LimitNOFILE        = 65536;
       };
 
       environment.SUMERIA_TOKEN_FILE = "${cfg.dataDir}/sumeria-tokens.json";
