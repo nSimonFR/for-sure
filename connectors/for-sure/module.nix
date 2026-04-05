@@ -90,7 +90,14 @@ in
       port = lib.mkOption {
         type        = lib.types.port;
         default     = 8889;
-        description = "Port for the mitmproxy HTTP proxy (configure iPhone to use this)";
+        description = "Port for the mitmproxy transparent proxy";
+      };
+
+      exitNodeClients = lib.mkOption {
+        type        = lib.types.listOf lib.types.str;
+        default     = [];
+        description = "Tailscale IPs of devices using the RPi5 as exit node (HTTPS intercepted)";
+        example     = [ "100.112.22.60" ];
       };
     };
   };
@@ -167,13 +174,17 @@ in
       environment.SUMERIA_TOKEN_FILE = "${cfg.dataDir}/sumeria-tokens.json";
     };
 
-    # Redirect all HTTPS from Tailscale clients → mitmproxy (transparent interception).
-    # Only applies when iPhone (or another device) uses the RPi5 as a Tailscale exit node.
-    networking.firewall.extraCommands = lib.mkIf cfg.mitm.enable ''
-      iptables -t nat -A PREROUTING -i tailscale0 -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port}
-    '';
-    networking.firewall.extraStopCommands = lib.mkIf cfg.mitm.enable ''
-      iptables -t nat -D PREROUTING -i tailscale0 -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port} || true
-    '';
+    # Redirect HTTPS from specific exit-node clients → mitmproxy (transparent interception).
+    # Scoped to exitNodeClients IPs only to avoid intercepting all Tailscale peers.
+    networking.firewall.extraCommands = lib.mkIf (cfg.mitm.enable && cfg.mitm.exitNodeClients != []) (
+      lib.concatMapStringsSep "\n" (ip: ''
+        iptables -t nat -A PREROUTING -i tailscale0 -s ${ip} -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port}
+      '') cfg.mitm.exitNodeClients
+    );
+    networking.firewall.extraStopCommands = lib.mkIf (cfg.mitm.enable && cfg.mitm.exitNodeClients != []) (
+      lib.concatMapStringsSep "\n" (ip: ''
+        iptables -t nat -D PREROUTING -i tailscale0 -s ${ip} -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port} || true
+      '') cfg.mitm.exitNodeClients
+    );
   };
 }
