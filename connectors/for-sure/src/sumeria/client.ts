@@ -28,10 +28,10 @@ async function suteriaFetch(path: string, init?: RequestInit): Promise<unknown> 
     // for-sure-mitm service will auto-write fresh tokens to sumeria-tokens.json.
     await sendTelegram(
       "⚠️ <b>for-sure / Sumeria</b>: tokens expired (401)\n" +
-      "Open the Sumeria app with iPhone proxy → RPi5:8889 to auto-refresh.",
+      "Enable RPi5 exit node on iPhone and open the Sumeria app to auto-refresh.",
     );
     throw new Error(
-      "Sumeria 401: tokens expired — open Sumeria app via MITM proxy to auto-refresh",
+      "Sumeria 401: tokens expired — enable RPi5 exit node on iPhone and open Sumeria app",
     );
   }
   if (!res.ok) {
