@@ -2,40 +2,6 @@
 let
   cfg = config.services.for-sure;
   pkg = pkgs.callPackage ./package.nix {};
-
-  # Sumeria-specific: intercepts requests to api.lydia-app.com and extracts the three
-  # static session headers (auth_token / public_token / access-token) that Sumeria uses
-  # instead of OAuth. Tokens are written atomically to sumeria-tokens.json so the
-  # for-sure service picks them up on the next request without a restart.
-  #
-  # TODO(sumeria-mitm): these headers are undocumented and were discovered by MITM.
-  # If the Sumeria app changes its auth scheme this script needs to be updated.
-  tokenExtractor = pkgs.writeText "sumeria-token-extractor.py" ''
-    import json, os
-    from mitmproxy import http
-
-    # TODO(sumeria-mitm): hardcoded to api.lydia-app.com (Sumeria/Lydia backend).
-    # Not a generic token extractor — do not reuse for other services.
-    TOKEN_FILE = os.environ.get("SUMERIA_TOKEN_FILE", "/var/lib/for-sure/sumeria-tokens.json")
-
-    class SumeriaTokenExtractor:
-        def request(self, flow: http.HTTPFlow):
-            if "api.lydia-app.com" not in flow.request.host:
-                return
-            h = flow.request.headers
-            if h.get("auth_token") and h.get("public_token") and h.get("access-token"):
-                tokens = {
-                    "auth_token":   h["auth_token"],
-                    "public_token": h["public_token"],
-                    "access_token": h["access-token"],
-                }
-                tmp = TOKEN_FILE + ".tmp"
-                with open(tmp, "w") as f:
-                    json.dump(tokens, f, indent=2)
-                os.rename(tmp, TOKEN_FILE)
-
-    addons = [SumeriaTokenExtractor()]
-  '';
 in
 {
   options.services.for-sure = {
@@ -56,7 +22,7 @@ in
     dataDir = lib.mkOption {
       type        = lib.types.str;
       default     = "/var/lib/for-sure";
-      description = "Directory for token storage (swile-tokens.json, sumeria-tokens.json)";
+      description = "Directory for token storage (swile-tokens.json)";
     };
 
     apiKeyFile = lib.mkOption {
@@ -70,6 +36,12 @@ in
       description = "Override the account name shown in Sure (defaults to wallet label from Swile)";
     };
 
+    sumeria.tokenFile = lib.mkOption {
+      type        = lib.types.nullOr lib.types.str;
+      default     = null;
+      description = "Path to sumeria-tokens.json written by an external token extractor";
+    };
+
     telegram = {
       botTokenFile = lib.mkOption {
         type        = lib.types.nullOr lib.types.str;
@@ -81,23 +53,6 @@ in
         type        = lib.types.nullOr lib.types.str;
         default     = null;
         description = "Telegram chat ID to send alerts to";
-      };
-    };
-
-    mitm = {
-      enable = lib.mkEnableOption "persistent mitmproxy service for Sumeria token auto-capture";
-
-      port = lib.mkOption {
-        type        = lib.types.port;
-        default     = 8889;
-        description = "Port for the mitmproxy transparent proxy";
-      };
-
-      exitNodeClients = lib.mkOption {
-        type        = lib.types.listOf lib.types.str;
-        default     = [];
-        description = "Tailscale IPs of devices using the RPi5 as exit node (HTTPS intercepted)";
-        example     = [ "100.112.22.60" ];
       };
     };
   };
@@ -132,59 +87,13 @@ in
         FOR_SURE_API_KEY_FILE = cfg.apiKeyFile;
       } // lib.optionalAttrs (cfg.swile.accountName != null) {
         SWILE_ACCOUNT_NAME = cfg.swile.accountName;
+      } // lib.optionalAttrs (cfg.sumeria.tokenFile != null) {
+        SUMERIA_TOKEN_FILE = cfg.sumeria.tokenFile;
       } // lib.optionalAttrs (cfg.telegram.botTokenFile != null) {
         TELEGRAM_BOT_TOKEN_FILE = cfg.telegram.botTokenFile;
       } // lib.optionalAttrs (cfg.telegram.chatId != null) {
         TELEGRAM_CHAT_ID = cfg.telegram.chatId;
       };
     };
-
-    # Sumeria-specific MITM service: transparent proxy on tailscale0.
-    # When the iPhone uses the RPi5 as a Tailscale exit node, all its traffic is routed
-    # here. The iptables REDIRECT rule below intercepts port 443 → mitmproxy, which
-    # extracts Sumeria tokens and passes everything else through untouched (TCP tunnel
-    # via ignore-hosts). No proxy config needed on the phone — just enable exit node once.
-    # TODO(sumeria-mitm): mitmproxy CA must be installed + trusted on the iPhone.
-    # TODO(sumeria-mitm): exit node must be approved in Tailscale admin console.
-    systemd.services.for-sure-mitm = lib.mkIf cfg.mitm.enable {
-      description = "Sumeria token auto-extractor (mitmproxy transparent)";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "network-online.target" ];
-      wants       = [ "network-online.target" ];
-
-      serviceConfig = {
-        ExecStart = lib.concatStringsSep " " [
-          "${pkgs.mitmproxy}/bin/mitmdump"
-          "--mode transparent"
-          "-p ${toString cfg.mitm.port}"
-          "--ignore-hosts '(?!api\\.lydia-app\\.com).*'"
-          "--set confdir=${cfg.dataDir}/mitmproxy"
-          "--set block_global=false"
-          "-s ${tokenExtractor}"
-        ];
-        User               = "for-sure";
-        Group              = "for-sure";
-        Restart            = "on-failure";
-        RestartSec         = "5";
-        ReadWritePaths     = [ cfg.dataDir ];
-        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
-        LimitNOFILE        = 65536;
-      };
-
-      environment.SUMERIA_TOKEN_FILE = "${cfg.dataDir}/sumeria-tokens.json";
-    };
-
-    # Redirect HTTPS from specific exit-node clients → mitmproxy (transparent interception).
-    # Scoped to exitNodeClients IPs only to avoid intercepting all Tailscale peers.
-    networking.firewall.extraCommands = lib.mkIf (cfg.mitm.enable && cfg.mitm.exitNodeClients != []) (
-      lib.concatMapStringsSep "\n" (ip: ''
-        iptables -t nat -A PREROUTING -i tailscale0 -s ${ip} -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port}
-      '') cfg.mitm.exitNodeClients
-    );
-    networking.firewall.extraStopCommands = lib.mkIf (cfg.mitm.enable && cfg.mitm.exitNodeClients != []) (
-      lib.concatMapStringsSep "\n" (ip: ''
-        iptables -t nat -D PREROUTING -i tailscale0 -s ${ip} -p tcp --dport 443 -j REDIRECT --to-port ${toString cfg.mitm.port} || true
-      '') cfg.mitm.exitNodeClients
-    );
   };
 }
