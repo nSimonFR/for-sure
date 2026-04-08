@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": { "for-sure": "dist/index.js" },
-  "scripts": { "build": "tsc", "dev": "tsx src/index.ts" },
+  "scripts": { "build": "tsc --build", "dev": "tsx src/index.ts" },
   "dependencies": { "@for-sure/lunchflow": "*" },
   "devDependencies": {
     "typescript": "^5.4.0",
