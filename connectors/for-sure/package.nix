@@ -7,7 +7,7 @@ buildNpmPackage rec {
   src = ../..;                         # monorepo root (has package-lock.json)
   npmWorkspace = "connectors/for-sure";
 
-  npmDepsHash = "sha256-YcQfz2enEF2tBnTN4Sh2RzvAlI1bH/Qa9gLaGZQUqWo=";
+  npmDepsHash = "sha256-Nb0Xp/JdMk8Ec9PsbLBBIiUyZMmlILHMVHVykHHQ0aw=";
 
   dontNpmInstall = true;
   nativeBuildInputs = [ makeWrapper ];
