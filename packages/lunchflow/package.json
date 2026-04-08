@@ -10,7 +10,7 @@
     "./server": "./dist/server.js",
     "./router": "./dist/router.js"
   },
-  "scripts": { "build": "tsc" },
+  "scripts": { "build": "tsc --build" },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"

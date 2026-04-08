@@ -4,7 +4,7 @@ import type { SumeriaAccount, SumeriaTransaction } from "./types.js";
 
 const BASE = "https://api.lydia-app.com";
 
-async function suteriaFetch(path: string, init?: RequestInit): Promise<unknown> {
+async function sumeriaFetch(path: string, init?: RequestInit): Promise<unknown> {
   const t = await loadTokens();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -41,7 +41,7 @@ async function suteriaFetch(path: string, init?: RequestInit): Promise<unknown> 
 }
 
 export async function getAccounts(): Promise<SumeriaAccount[]> {
-  const data = (await suteriaFetch("/accounts")) as { items: SumeriaAccount[] };
+  const data = (await sumeriaFetch("/accounts")) as { items: SumeriaAccount[] };
   return data.items;
 }
 
@@ -65,7 +65,7 @@ export async function getTransactions(emitterId: string): Promise<SumeriaTransac
       },
     },
   });
-  const data = (await suteriaFetch("/history/_search", { method: "POST", body })) as {
+  const data = (await sumeriaFetch("/history/_search", { method: "POST", body })) as {
     items: SumeriaTransaction[];
   };
   return data.items;

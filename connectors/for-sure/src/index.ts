@@ -27,7 +27,7 @@ const handlers: LunchflowHandlers = {
   async getTransactions(accountId) {
     if (accountId.startsWith("swile:"))   return swile.getTransactions(strip("swile", accountId));
     if (accountId.startsWith("sumeria:")) return sumeria.getTransactions(strip("sumeria", accountId));
-    return [];
+    throw Object.assign(new Error("Unknown account"), { statusCode: 404 });
   },
 
   async getBalance(accountId) {
@@ -39,7 +39,7 @@ const handlers: LunchflowHandlers = {
   async getHoldings(accountId) {
     if (accountId.startsWith("swile:"))   return swile.getHoldings(strip("swile", accountId));
     if (accountId.startsWith("sumeria:")) return sumeria.getHoldings(strip("sumeria", accountId));
-    return { status: 404, body: { error: "Unknown account" } };
+    throw Object.assign(new Error("Unknown account"), { statusCode: 404 });
   },
 };
 

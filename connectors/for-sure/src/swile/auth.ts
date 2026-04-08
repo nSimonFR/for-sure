@@ -14,7 +14,7 @@ let refreshPromise: Promise<TokenData> | null = null;
 
 async function saveTokens(tokens: TokenData): Promise<void> {
   const tmp = swileConfig.tokenFile + ".tmp";
-  await writeFile(tmp, JSON.stringify(tokens, null, 2), "utf-8");
+  await writeFile(tmp, JSON.stringify(tokens, null, 2), { encoding: "utf-8", mode: 0o600 });
   await rename(tmp, swileConfig.tokenFile);
   cachedTokens = tokens;
 }
