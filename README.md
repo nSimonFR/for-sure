@@ -9,7 +9,7 @@ Be sure to check https://github.com/nSimonFR/sure-nix too !
 > Install the `for-sure` Sure-finance connector on a Node-capable host. **Done when** `curl -s http://127.0.0.1:8340/api/v1/accounts` returns a JSON array (empty is fine before tokens; non-empty after).
 >
 > 1. Clone: `git clone https://github.com/nSimonFR/for-sure && cd for-sure`
-> 2. Read first: top-level `package.json`, `connectors/for-sure/package.json`, `packages/lunchflow/package.json`, `connectors/for-sure/README.md` if present. Toolchain is Node + npm workspaces (root lockfile is `package-lock.json`).
+> 2. Read first: `SPEC.md` (the canonical app spec — HTTP surface, providers, invariants), then top-level `package.json`, `connectors/for-sure/package.json`, `packages/lunchflow/package.json`. Toolchain is Node + npm workspaces (root lockfile is `package-lock.json`). When `SPEC.md` and any other doc disagree, trust `SPEC.md`.
 > 3. Install: `npm install` at the repo root (picks up every workspace).
 > 4. Build the shared package first, then the connector: `npm run build -w packages/lunchflow && npm run build -w connectors/for-sure`.
 > 5. Required env (per connector): `SWILE_TOKENS_FILE` (path), `SUMERIA_TOKEN_FILE` (path). Create both files as empty JSON `{}` if you don't have tokens yet.
