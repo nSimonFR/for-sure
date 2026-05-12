@@ -1,10 +1,10 @@
 # SPEC — for-sure
 
 This is the authoritative specification for **for-sure** as it must behave on
-the wire. It describes the contract: HTTP surface, providers, data shapes,
-configuration, and invariants. The current implementation language and source
-layout are **not** part of the contract; see the appendix for pointers into
-the current codebase.
+the wire. It describes the contract: what the service does, what HTTP it
+exposes, and what external systems it depends on. The current implementation
+language, source layout, and internal architecture are **not** part of the
+contract; see the appendix for pointers into the current codebase.
 
 Treat any disagreement between this document and the source as a bug — first
 in this document, then in the source. Known implementation deviations from
@@ -15,21 +15,17 @@ bug".
 
 ## 1. Purpose
 
-`for-sure` is a connector that bridges French neobank-style data sources
+`for-sure` synchronises French neobank-style meal-voucher data sources
 (currently **Swile** and **Sumeria**) into [Sure](https://sure.am/) (a
-self-hosted Maybe Finance fork) via the Lunchflow-style HTTP integration.
-
-The deployed binary runs a **combined Swile + Sumeria** connector behind a
-single HTTP endpoint (default `127.0.0.1:8340`). Sure pulls accounts,
-transactions, and balances from this endpoint over plain HTTP and presents
-the merged result in its UI. A NixOS module runs it as a hardened systemd
-service on the user's RPi5.
+self-hosted Maybe Finance fork) by exposing the **Lunchflow connector
+protocol** over HTTP: accounts, transactions, and balances are fetched by
+Sure from for-sure, which fronts the upstream provider APIs.
 
 ---
 
 ## 2. Surface area — HTTP API
 
-The connector is a plain HTTP server listening on `${HOST}:${PORT}` (defaults
+The service exposes a plain HTTP endpoint at `${HOST}:${PORT}` (default
 `127.0.0.1:8340`).
 
 ### 2.1 Routing rules
@@ -38,8 +34,8 @@ The connector is a plain HTTP server listening on `${HOST}:${PORT}` (defaults
   `404 {"error":"Not found"}`.
 - **Path prefix**: all routes are mounted under `/api/v1`. Any other path
   returns `404 {"error":"Not found"}`.
-- The `:accountId` segment is URL-decoded before dispatch so a colon in the
-  prefix (`swile:...`, `sumeria:...`) survives URL encoding by clients.
+- The `:accountId` segment is URL-decoded so a colon in the prefix
+  (`swile:...`, `sumeria:...`) survives URL encoding by clients.
 
 ### 2.2 Endpoints
 
@@ -51,7 +47,7 @@ The connector is a plain HTTP server listening on `${HOST}:${PORT}` (defaults
 | GET    | `/api/v1/accounts/:accountId/holdings`     | 501            | `{ "error": "Holdings not supported for <provider>" }` |
 
 Holdings always returns `501` for both providers. It is not implemented; Sure
-may probe it, and the connector must answer with the documented 501 body.
+may probe it, and the service must answer with the documented 501 body.
 
 ### 2.3 Authentication
 
@@ -61,9 +57,8 @@ may probe it, and the connector must answer with the documented 501 body.
 - If `FOR_SURE_API_KEY_FILE` is empty / unset / resolves to empty after trim,
   authentication is disabled and any caller can hit the API. This is the
   default for local-only `127.0.0.1` binding.
-- The key may be read once and cached in process memory; callers cannot
-  expect the file to be re-read between requests within a single process
-  lifetime.
+- The key file is read at startup; callers cannot expect runtime edits to
+  take effect without a service restart.
 
 ### 2.4 Response shapes
 
@@ -105,24 +100,23 @@ contract surface — clients (Sure) parse them by name.
 ### 2.5 Error shape
 
 - Any unmatched route or method → `404 {"error":"Not found"}`.
-- An account-id that doesn't match a known provider prefix should be treated
-  as **not found** (`404 {"error":"Not found"}` or similar 404 body). Same
-  for a balance/transaction lookup against a known prefix but no matching
-  account at the upstream.
+- An account-id that doesn't match a known provider prefix → `404
+  {"error":"Not found"}` (or similar 404 body). Same for a balance /
+  transaction lookup against a known prefix but no matching account at the
+  upstream.
 - Any unexpected error during request handling → `500 {"error":"Internal
   server error"}`, with the real cause logged to stdout.
 - Holdings explicitly returns `501` — this is the only non-200/non-404/non-500
   status the server emits in normal operation.
 
-> **Known current-implementation bug.** Handlers signal "account not found" /
-> "unknown account-id prefix" by raising errors that carry a `404` hint, but
-> the current server converts every raised error into `500`. Over the wire,
-> "not found" account-ids therefore surface as `500` today. The contract is
-> still `404`; see implementation pointers for the fix site.
+> **Known current-implementation bug.** The 404 contract is not currently
+> honored for account-not-found / unknown-prefix cases — observed behavior is
+> `500`. The contract is still `404`; see implementation pointers for the fix
+> site.
 
 ### 2.6 Logging
 
-The connector writes single-line JSON to stdout per request:
+The service writes single-line JSON to stdout per request:
 ```json
 {"ts":"2026-05-11T...","level":"info","msg":"request","method":"GET","path":"/api/v1/accounts","status":200,"ms":42}
 ```
@@ -133,27 +127,25 @@ There is no separate log file; the supervisor (systemd) captures stdout.
 
 ## 3. Account ID conventions
 
-The connector is **a router**, not a single provider. Sure sees one connector
-but pulls from two upstreams; the discriminator is the **prefix on the
-Lunchflow account id**.
+Sure sees one for-sure endpoint but pulls from two upstream providers; the
+discriminator visible to Sure is the **prefix on each Lunchflow account id**.
 
-| Prefix     | Source object                  | Example                                       |
-| ---------- | ------------------------------ | --------------------------------------------- |
-| `swile:`   | Swile wallet UUID              | `swile:6f2a8c1e-3b4d-4f5a-9b1c-2e8f7a6c5d3b`  |
-| `sumeria:` | Sumeria account `emitter_id` (NOT `account_id`) | `sumeria:em_abc123...`         |
+| Prefix     | Source object                                   | Example                                       |
+| ---------- | ----------------------------------------------- | --------------------------------------------- |
+| `swile:`   | Swile wallet UUID                               | `swile:6f2a8c1e-3b4d-4f5a-9b1c-2e8f7a6c5d3b`  |
+| `sumeria:` | Sumeria account `emitter_id` (NOT `account_id`) | `sumeria:em_abc123...`                        |
 
-Routing semantics:
+Wire contract:
 
-1. `GET /accounts` fans out to both providers in parallel, then prefixes each
-   provider's IDs (`swile:<id>` / `sumeria:<id>`) before merging into a
-   single `accounts` array.
-2. `GET /accounts/:accountId/{transactions,balance,holdings}` inspects the
-   account-id prefix, strips it, and forwards to the matching provider's
-   handler.
+1. `GET /accounts` returns the union of all upstream accounts, each id
+   carrying the provider prefix.
+2. `GET /accounts/:accountId/{transactions,balance,holdings}` selects the
+   upstream provider from the id prefix; the segment after the prefix is the
+   upstream-native account identifier.
 3. Unknown prefix → `404` (subject to the "Known current-implementation bug"
    noted in §2.5).
 
-This is the single dispatching mechanism — there is no other registry.
+Sure echoes the prefixed id verbatim and does not parse the suffix.
 
 ---
 
@@ -178,15 +170,15 @@ retries with `authentication_code`.
   "expires_at":    <unix_seconds>
 }
 ```
-Writes are atomic via `<file>.tmp` + `rename`.
+Writes are atomic (write to `<file>.tmp`, then `rename`).
 
 **Refresh semantics.**
 - Proactive: if `expires_at - now < 60s`, refresh via
   `grant_type=refresh_token` before issuing the upstream call.
-- Concurrent-refresh guard: at most one refresh runs at a time;
-  concurrent callers wait for the in-flight refresh.
 - Reactive: on a 401 from the upstream API, refresh once and retry the
   original request a single time.
+- Concurrent in-flight requests must not trigger more than one refresh per
+  expiry event.
 
 **Upstream API.** `https://neobank-api.swile.co/api`
 - `GET /v0/wallets` → `{ wallets: SwileWallet[] }` — used for accounts + balance
@@ -233,7 +225,7 @@ service). JSON shape:
 ```
 
 **Refresh semantics.** **There is none.** Tokens expire (~3h in practice)
-and are refreshed externally. On a 401 from the upstream API the connector
+and are refreshed externally. On a 401 from the upstream API the service
 must:
 1. Send a Telegram alert: `"⚠️ for-sure / Sumeria: tokens expired (401) —
    enable RPi5 exit node on iPhone and open the Sumeria app to auto-refresh."`
@@ -250,7 +242,7 @@ Lydia banking app).
   `aispis_transaction`, and `purpose:"savings:roundings"`. `size: 999`.
   Used for transactions.
 
-The connector spoofs the iOS LYDIA client by setting all upstream-required
+The service spoofs the iOS LYDIA client by setting all upstream-required
 headers on every request: `auth_token`, `public_token`, `access-token`,
 `Authorization: Bearer <access_token>`, plus `user-agent`, `app_version`,
 `phone_os`, `x-app-source`.
@@ -273,9 +265,27 @@ headers on every request: `auth_token`, `public_token`, `access-token`,
 
 ---
 
-## 5. Configuration
+## 5. Boundaries
 
-### 5.1 Environment variables (consumed by the connector)
+### 5.1 Upstream dependencies (for-sure calls these)
+
+| System          | Endpoint base                       | Auth mechanism                              | Failure surfacing                              |
+| --------------- | ----------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| Swile           | `https://neobank-api.swile.co/api`  | OAuth 2.0 password grant (+ optional OTP)   | 401 → refresh+retry once, else `500`           |
+| Swile OAuth     | `https://directory.swile.co/oauth`  | password / refresh_token grants             | Refresh failure → `500`                        |
+| Sumeria (Lydia) | `https://api.lydia-app.com`         | Static session headers (no refresh)         | 401 → Telegram alert + `500`                   |
+| Telegram Bot    | `https://api.telegram.org`          | Bot token + chat id                         | Alert path is no-op if either config is unset  |
+| `sumeria-mitm`  | (file producer, no network call)    | Writes Sumeria token file out-of-band       | Missing file → Telegram alert + `500`          |
+
+### 5.2 Downstream consumer (calls for-sure)
+
+- **Sure (Maybe Finance fork)** consumes the Lunchflow connector protocol
+  documented in §2. Sure is configured with one Lunchflow integration
+  pointing at `http://${HOST}:${PORT}/api/v1`. All exposed accounts
+  (currently 1 Swile + 3–5 Sumeria, depending on user) appear under that
+  single source.
+
+### 5.3 Deployment contract — environment variables
 
 | Variable                  | Default                                    | Purpose                                                                          |
 | ------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
@@ -293,16 +303,30 @@ headers on every request: `auth_token`, `public_token`, `access-token`,
 If `TELEGRAM_BOT_TOKEN_FILE` or `TELEGRAM_CHAT_ID` is unset, the Telegram
 alert path is a silent no-op. Both must be present for alerts to fire.
 
-### 5.2 CLI entrypoints
+### 5.4 Deployment contract — CLI entrypoints
 
-- `<connector-bin>` (no args) — start the HTTP server.
-- `<connector-bin> --setup swile` — interactive setup writing the Swile
-  token file (email + password + optional OTP grant).
-- `<connector-bin> --setup sumeria` — interactive setup writing the Sumeria
+- `<service-bin>` (no args) — start the HTTP server.
+- `<service-bin> --setup swile` — interactive setup writing the Swile token
+  file (email + password + optional OTP grant).
+- `<service-bin> --setup sumeria` — interactive setup writing the Sumeria
   token file. In production the file is normally provisioned externally
   instead.
 
-### 5.3 NixOS module (`services.for-sure`)
+### 5.5 Deployment contract — on-disk layout (production)
+
+```
+/var/lib/for-sure/                          0700 for-sure:for-sure
+  swile-tokens.json                         rw by service (atomic rename)
+/var/lib/sumeria-mitm/tokens.json           written by external sumeria-mitm service, read by for-sure
+/run/agenix/for-sure-api-key                read by service via FOR_SURE_API_KEY_FILE
+/run/agenix/telegram-bot-token              read by service via TELEGRAM_BOT_TOKEN_FILE
+```
+
+The specific agenix paths are deployment policy, not enforced by the
+service — only that files at the configured paths exist and are readable by
+the service user.
+
+### 5.6 NixOS module (`services.for-sure`)
 
 The shipped NixOS module exposes:
 
@@ -317,24 +341,9 @@ The shipped NixOS module exposes:
 - `telegram.chatId` (nullable string)
 
 The module creates a `for-sure` system user/group, makes `dataDir` writable,
-and starts `systemd.services.for-sure` with `Restart = on-failure`,
-`RestartSec = 10`, and the env variables above. It does **not** declare the
-API-key or Telegram-token files as systemd credentials — they are referenced
-by absolute path.
-
-### 5.4 Expected on-disk layout (production)
-
-```
-/var/lib/for-sure/                          0700 for-sure:for-sure
-  swile-tokens.json                         rw by service (atomic rename)
-/var/lib/sumeria-mitm/tokens.json           written by external sumeria-mitm service, read by for-sure
-/run/agenix/for-sure-api-key                read by service via FOR_SURE_API_KEY_FILE
-/run/agenix/telegram-bot-token              read by service via TELEGRAM_BOT_TOKEN_FILE
-```
-
-The specific agenix paths are deployment policy, not enforced by the
-connector — only that files at the configured paths exist and are readable
-by the service user.
+and runs the service with `Restart = on-failure`, `RestartSec = 10`, and the
+env variables above. It does **not** declare the API-key or Telegram-token
+files as systemd credentials — they are referenced by absolute path.
 
 ---
 
@@ -362,7 +371,7 @@ by the service user.
 - **Missing token file** → Telegram alert ("token file missing") before the
   underlying file-not-found surfaces as `500`.
 - **401 from upstream** → Telegram alert ("tokens expired (401)"), request
-  becomes `500`. The connector does not attempt to refresh; the user must
+  becomes `500`. The service does not attempt to refresh; the user must
   re-run the iOS app through the RPi5 exit node so the external
   `sumeria-mitm` service rewrites the token file.
 - **Other non-2xx** from upstream → `500`.
@@ -379,14 +388,14 @@ current implementation bug surfacing it as `500`).
 
 - **Holdings / investments.** Both providers return 501. Sure may probe the
   endpoint; do not implement it unless an upstream signal exists.
-- **POST / PUT / DELETE.** The connector is read-only. Any state changes to
+- **POST / PUT / DELETE.** The service is read-only. Any state changes to
   Swile/Sumeria are explicitly out of scope.
 - **Sumeria OAuth or self-refresh.** Token capture lives in the external
   `sumeria-mitm` service, not here.
-- **Multi-tenant operation.** One running connector = one Swile account +
-  one Sumeria account. There is no per-request user / org context.
+- **Multi-tenant operation.** One deployment = one Swile account + one
+  Sumeria account. There is no per-request user / org context.
 - **CSV import path.** One-shot historical CSV import helpers may live
-  alongside the connector but neither call nor are called by it.
+  alongside the service but neither call nor are called by it.
 - **TLS.** The server is plain HTTP. Reverse proxies (e.g. Tailscale Serve,
   nginx) are expected to provide TLS termination if needed.
 
@@ -396,11 +405,11 @@ current implementation bug surfacing it as `500`).
 
 These must remain true. Changes that violate them are breaking for Sure.
 
-1. **Account-id prefix is the routing key.** Every account id returned by
-   `GET /api/v1/accounts` starts with `swile:` or `sumeria:`, and the same
-   prefix is what the server uses to dispatch subsequent
-   `transactions` / `balance` / `holdings` calls. Sure must echo the id
-   verbatim.
+1. **Account-id prefix is the routing key visible on the wire.** Every
+   account id returned by `GET /api/v1/accounts` starts with `swile:` or
+   `sumeria:`, and the same prefix determines which upstream provider serves
+   subsequent `transactions` / `balance` / `holdings` calls. Sure echoes the
+   id verbatim.
 2. **Prefix segment is opaque to Sure.** The substring after `swile:` is a
    Swile wallet UUID; after `sumeria:` is a Sumeria `emitter_id` (NOT
    `account_id`). Both are upstream-stable identifiers — Sure does not
@@ -423,33 +432,26 @@ These must remain true. Changes that violate them are breaking for Sure.
    `127.0.0.1`-only default binding.
 9. **Logging is single-line JSON to stdout.** Anything else breaks
    journald structured logging.
-10. **The connector is a single HTTP process for all upstreams.** Adding a
-    provider means adding a prefix and a new dispatching branch in the
-    router — never spinning up a second HTTP server.
-
----
-
-## 9. Build & runtime topology (contract surface only)
-
-- **One process, one port.** A single connector process binds
-  `${HOST}:${PORT}` and serves all routes for all upstreams it knows about.
-- **Sure integration.** Sure points at `http://${HOST}:${PORT}/api/v1` via a
-  single Lunchflow integration. All exposed accounts (currently 1 Swile +
-  3–5 Sumeria, depending on user) appear under one source.
-- **Supervisor.** A systemd unit (`for-sure.service`) runs the connector
-  with `Restart=on-failure`, `RestartSec=10`. stdout is captured by
-  journald.
+10. **A configured account whose token file is missing must produce a 5xx
+    response and (for Sumeria) a Telegram alert, never silent success.**
 
 ---
 
 ## Implementation pointers (current)
 
 These are pointers into the current codebase, not part of the contract.
-A reimplementation in another language can ignore everything in this
-section. They exist so an agent reading the source today knows where each
-contract clause lives.
+A reimplementation in another language, runtime, or topology can ignore
+everything in this section. They exist so an agent reading the source today
+knows where each contract clause lives.
 
 - **Language / runtime.** TypeScript on Node.js, ESM output.
+- **Topology.** A single combined-connector process binds `${HOST}:${PORT}`
+  and serves all routes for all upstreams it knows about. Routing across
+  providers is done by inspecting the `swile:` / `sumeria:` account-id
+  prefix in a router and forwarding to the matching provider handler. A
+  shared `lunchflow` package contains the HTTP server, router, logger, and
+  Lunchflow type definitions, reused across providers. Error → HTTP status
+  translation happens in a single `catch` clause in the shared server.
 - **Monorepo.** npm workspaces; single root `package-lock.json`. Layout:
   - `packages/lunchflow/` — `@for-sure/lunchflow`: shared HTTP server
     (`src/server.ts`), router (`src/router.ts`), JSON logger
