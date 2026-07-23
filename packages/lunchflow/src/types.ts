@@ -8,6 +8,9 @@ export interface LunchflowAccount {
 export interface LunchflowTransaction {
   id: string;
   merchant: string;
+  // Optional free-text memo (e.g. a P2P payment note). Sure stores this as the
+  // transaction's notes; it is NOT turned into a merchant.
+  description?: string;
   date: string;
   amount: number;
   currency: string;
