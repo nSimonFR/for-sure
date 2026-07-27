@@ -123,6 +123,50 @@ The service writes single-line JSON to stdout per request:
 Errors carry `{"level":"error","msg":"request failed",...,"error":"<message>"}`.
 There is no separate log file; the supervisor (systemd) captures stdout.
 
+### 2.7 Merchant name normalisation
+
+`merchant` is normalised by the router before it leaves `/transactions`, for
+every provider. Each handler decides *which* upstream string is the merchant
+(domain knowledge); the router decides what that string *looks like*.
+
+This exists because the downstream consumer derives merchant identity from the
+name we send — Sure computes
+`provider_merchant_id = "lunchflow_merchant_" + md5(merchant.downcase)` and
+looks the merchant up by it. Two payloads differing only by a store number or a
+legal-form prefix therefore become two merchants, and history fragments.
+
+Applied, in order (see `packages/lunchflow/src/normalize.ts`):
+
+| Rule | Example |
+|---|---|
+| trailing quantity marker | `Top 100 US Tech Stocks * 4.94053113` → `Top 100 US Tech Stocks` |
+| trailing date | `Uber 17/01` → `Uber` |
+| trailing store/branch number | `Franprix 5260` → `Franprix` |
+| leading legal form | `Sas Keralan` → `Keralan` |
+| whitespace collapse | `  Camion   Qui  Fume ` → `Camion Qui Fume` |
+
+Every rule **fails closed**: if the result would be blank, shorter than three
+characters, or left without a word of three or more letters, the previous value
+is kept. A wrong normalisation silently merges unrelated merchants, which is
+worse than leaving a duplicate — hence `Le 34` and `Le 138` survive intact.
+
+Deliberately **not** normalised:
+
+- **Case.** Sure lowercases before hashing, so case variants already collapse;
+  changing case would only churn ids.
+- **Payment-processor prefixes** (`Sum Up *`, `Shotgun*`, `Discord*`). Distinct
+  businesses share a processor — `Sum Up *Ay Simo` and `Sum Up *Chick N House`
+  are two different restaurants.
+- **`Cashback ` prefix.** Cashback is a distinct money flow from a purchase at
+  the same brand.
+- **Abbreviations** (`Crf Mkt` → `Carrefour Market`). Not derivable; it needs a
+  hand-maintained dictionary, which is out of scope here.
+
+> **Changing these rules re-keys merchants downstream.** Because the id is a
+> hash of the name, altering the output creates a *new* merchant in Sure while
+> the old one keeps its history. Any change to this module must be paired with a
+> one-off merge on the consumer side.
+
 ---
 
 ## 3. Account ID conventions
@@ -455,7 +499,9 @@ knows where each contract clause lives.
 - **Monorepo.** npm workspaces; single root `package-lock.json`. Layout:
   - `packages/lunchflow/` — `@for-sure/lunchflow`: shared HTTP server
     (`src/server.ts`), router (`src/router.ts`), JSON logger
-    (`src/logger.ts`), Lunchflow type definitions (`src/types.ts`).
+    (`src/logger.ts`), Lunchflow type definitions (`src/types.ts`),
+    merchant-name normalisation (`src/normalize.ts`, §2.7, covered by
+    `src/normalize.test.ts` — `npm test -w @for-sure/lunchflow`).
   - `connectors/for-sure/` — the production combined connector (binary:
     `for-sure`). Entrypoint `src/index.ts` wires handlers and does the
     `swile:` / `sumeria:` prefix dispatch. Per-provider code under

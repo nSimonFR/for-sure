@@ -1,3 +1,4 @@
+import { normalizeTransactionMerchant } from "./normalize.js";
 import type { LunchflowHandlers, RouteResult } from "./types.js";
 
 const PREFIX = "/api/v1";
@@ -23,7 +24,11 @@ export function createRouter(handlers: LunchflowHandlers) {
 
     if (action === "transactions") {
       const transactions = await handlers.getTransactions(accountId);
-      return { status: 200, body: { transactions } };
+      // Normalise centrally rather than per-connector: each handler decides
+      // WHICH string is the merchant (domain knowledge), the router decides
+      // what that string looks like (presentation). Any future connector gets
+      // canonical names for free.
+      return { status: 200, body: { transactions: transactions.map(normalizeTransactionMerchant) } };
     }
     if (action === "balance") {
       const balance = await handlers.getBalance(accountId);

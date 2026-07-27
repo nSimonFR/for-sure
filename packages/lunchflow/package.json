@@ -8,9 +8,13 @@
     "./logger": "./dist/logger.js",
     "./types":  "./dist/types.js",
     "./server": "./dist/server.js",
-    "./router": "./dist/router.js"
+    "./router": "./dist/router.js",
+    "./normalize": "./dist/normalize.js"
   },
-  "scripts": { "build": "tsc --build" },
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && node --test dist/*.test.js"
+  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
