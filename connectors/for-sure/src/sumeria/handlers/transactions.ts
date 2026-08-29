@@ -45,6 +45,35 @@ export function resolveMerchant(t: SumeriaTransaction): {
   };
 }
 
+// Sumeria statuses that mean "not final yet". Everything else is settled.
+//
+// This is an ALLOW-list on purpose — the polarity matters. It used to be a
+// deny-list (`status !== "settled" && !== "done" && !== "completed"`), which
+// silently marked every unlisted status as pending. `reversed` — a cancelled
+// card authorisation, which is final — hit exactly that hole and came through
+// as pending forever.
+//
+// A stuck `isPending: true` is not cosmetic. Sure's pending→posted reconciler
+// (Account::ProviderImportAdapter#find_pending_transaction) claims ANY pending
+// entry matching a newly-settled one on amount + currency within an 8-day
+// window — it never compares the merchant. A phantom pending row is therefore a
+// live hijack target: on 2026-08-23 a settled €52 "Moulin Mer By Lmd" claimed
+// the stuck-pending €52 "La Recre Des Trois Cures" row, overwrote its name and
+// external_id, and kept the wrong date.
+//
+// So the two failure directions are NOT symmetric:
+//   - unlisted status wrongly pending  → row becomes a hijack target (data loss)
+//   - unlisted status wrongly settled  → no pending badge (cosmetic)
+// Default to settled and list the pending states explicitly.
+//
+// Observed vocabulary (accounts 192264 + 357390, 2026-08): done, settled,
+// reversed, pending.
+const PENDING_STATUSES = new Set(["pending", "processing", "authorized"]);
+
+export function isPendingStatus(status: string | undefined | null): boolean {
+  return PENDING_STATUSES.has((status ?? "").trim().toLowerCase());
+}
+
 export async function getTransactions(accountId: string): Promise<LunchflowTransaction[]> {
   // accountId IS the emitter_id (returned by getAccounts handler)
   const txs = await fetchTransactions(accountId);
@@ -57,7 +86,7 @@ export async function getTransactions(accountId: string): Promise<LunchflowTrans
       date: t.created_at,
       amount: t.amount, // already EUR, already signed (negative = debit)
       currency: "EUR",
-      isPending: t.status !== "settled" && t.status !== "done" && t.status !== "completed",
+      isPending: isPendingStatus(t.status),
     };
   });
 }
