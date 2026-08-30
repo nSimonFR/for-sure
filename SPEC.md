@@ -283,8 +283,23 @@ Lydia banking app).
 - `GET /accounts` → `{ items: SumeriaAccount[] }` — used for accounts + balance
 - `POST /history/_search` with an Elasticsearch-style body filtering by
   `emitter.id` / `receiver.id` and excluding `selfPayment`,
-  `aispis_transaction`, and `purpose:"savings:roundings"`. `size: 999`.
-  Used for transactions.
+  `aispis_transaction`, and `purpose:"savings:roundings"`. Used for
+  transactions.
+
+  The endpoint pages: `size` caps one page, `from` is a true offset, and the
+  response carries an exact `total` alongside `items`. The connector **walks
+  every page** (`size: 999`) and returns the full history — an account with
+  2,160 transactions costs three requests, not one truncated at 999.
+
+  Paging stops at the first of: a short page, a page contributing no new ids,
+  reaching `total`, or a 50-page ceiling. Ids are de-duplicated, because a
+  transaction arriving mid-walk shifts the `createdAt desc` window and can
+  repeat a row across pages. `total` is treated as advisory — a response
+  without it still terminates on the short page.
+
+  This matters beyond completeness: the consumer can only correct a stored
+  transaction whose id the connector still returns, so anything never paged in
+  is not merely missing but permanently uncorrectable.
 
 The service spoofs the iOS LYDIA client by setting all upstream-required
 headers on every request: `auth_token`, `public_token`, `access-token`,
