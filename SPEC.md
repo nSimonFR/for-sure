@@ -106,6 +106,9 @@ contract surface — clients (Sure) parse them by name.
   upstream.
 - Any unexpected error during request handling → `500 {"error":"Internal
   server error"}`, with the real cause logged to stdout.
+- `GET /accounts` drops a provider whose upstream fails and logs why; it
+  returns `500` only when every provider fails. Sure keeps a linked account
+  that is missing from the list.
 - Holdings explicitly returns `501` — this is the only non-200/non-404/non-500
   status the server emits in normal operation.
 

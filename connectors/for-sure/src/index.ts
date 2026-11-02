@@ -17,17 +17,20 @@ function strip(prefix: string, id: string): string {
 }
 
 const handlers: LunchflowHandlers = {
+  // One provider down (e.g. Sumeria tokens expired) must not hide the others.
+  // Sure keeps an account that drops out of the list while it is linked.
   async getAccounts() {
-    const [swileAccts, sumeriaAccts, dvfAccts] = await Promise.all([
-      swile.getAccounts(),
-      sumeria.getAccounts(),
-      dvf.getAccounts(),
-    ]);
-    return [
-      ...withPrefix("swile", swileAccts),
-      ...withPrefix("sumeria", sumeriaAccts),
-      ...withPrefix("dvf", dvfAccts),
-    ];
+    const sources = { swile: swile.getAccounts(), sumeria: sumeria.getAccounts(), dvf: dvf.getAccounts() };
+    const results = await Promise.allSettled(Object.values(sources));
+    const failures = results.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
+    if (failures.length === results.length) throw failures[0];
+
+    return Object.keys(sources).flatMap((prefix, i) => {
+      const r = results[i];
+      if (r.status === "fulfilled") return withPrefix(prefix, r.value);
+      console.error(`[accounts] ${prefix} skipped:`, r.reason instanceof Error ? r.reason.message : r.reason);
+      return [];
+    });
   },
 
   async getTransactions(accountId) {
