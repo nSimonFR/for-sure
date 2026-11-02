@@ -4,7 +4,7 @@ export interface Sale {
   id: string;
   date: string;          // YYYY-MM-DD
   price: number;         // valeur_fonciere, whole mutation
-  surface: number;       // surface_reelle_bati of the single apartment
+  surface: number;       // Carrez when the deed gives one, else surface_reelle_bati
   rooms: number;
   lat: number;
   lon: number;
@@ -13,7 +13,7 @@ export interface Sale {
 export interface Subject {
   lat: number;
   lon: number;
-  surface: number;
+  surface: number;       // Carrez, as on a deed or listing
   rooms?: number;
   radius: number;        // metres
 }
@@ -21,6 +21,7 @@ export interface Subject {
 export interface Estimate {
   value: number;         // EUR, rounded to the nearest 1 000
   pricePerM2: number;
+  indexed: number;       // time adjustment applied to the comparables' median, e.g. 1.02
   sales: number;
   radius: number;
   months: number;
@@ -74,11 +75,14 @@ export function toSales(rows: Record<string, string>[]): Sale[] {
     if (group.some((r) => r.type_local && r.type_local !== "Appartement" && r.type_local !== "Dépendance")) continue;
 
     const apt = apartments[0];
+    const bati = Number(apt.surface_reelle_bati);
+    const carrez = [1, 2, 3, 4, 5].reduce((sum, i) => sum + (Number(apt[`lot${i}_surface_carrez`]) || 0), 0);
     const sale = {
       id,
       date: apt.date_mutation,
       price: Number(apt.valeur_fonciere),
-      surface: Number(apt.surface_reelle_bati),
+      // Carrez off by more than 40% is usually a lot from another unit.
+      surface: carrez > 0.6 * bati && carrez < 1.4 * bati ? carrez : bati,
       rooms: Number(apt.nombre_pieces_principales),
       lat: Number(apt.latitude),
       lon: Number(apt.longitude),
@@ -108,11 +112,31 @@ function monthsBefore(date: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function quarter(date: string): string {
+  return `${date.slice(0, 4)}Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
+}
+
+// Median €/m² per quarter over every sale given (whole communes, ~1 400 per
+// quarter in Paris), and the level of the six months up to `to`. Lets a sale from
+// a year ago count at the newest level in the data, not its own.
+export function quarterIndex(sales: Sale[], to: string): { level: (date: string) => number; latest: number } {
+  const byQuarter = new Map<string, number[]>();
+  for (const s of sales) {
+    const q = quarter(s.date);
+    (byQuarter.get(q) ?? byQuarter.set(q, []).get(q)!).push(s.price / s.surface);
+  }
+  const levels = new Map([...byQuarter].map(([q, xs]) => [q, median(xs)]));
+  const since = monthsBefore(to, 6);
+  const latest = median(sales.filter((s) => s.date > since).map((s) => s.price / s.surface));
+  return { level: (date) => levels.get(quarter(date)) ?? latest, latest };
+}
+
 // The window ends at the newest sale in the data, not today: DVF is published
 // with a ~6-month lag, so "the last 12 months" from today can be nearly empty.
 export function estimate(sales: Sale[], subject: Subject): Estimate | null {
   if (!sales.length) return null;
   const to = sales.reduce((max, s) => (s.date > max ? s.date : max), "");
+  const index = quarterIndex(sales, to);
 
   const tiers = [
     { radius: subject.radius, months: 12 },
@@ -128,10 +152,12 @@ export function estimate(sales: Sale[], subject: Subject): Estimate | null {
     );
     if (comparables.length < MIN_SALES) continue;
 
-    const pricePerM2 = Math.round(median(comparables.map((s) => s.price / s.surface)));
+    const raw = median(comparables.map((s) => s.price / s.surface));
+    const pricePerM2 = Math.round(median(comparables.map((s) => (s.price / s.surface) * (index.latest / index.level(s.date)))));
     return {
       value: Math.round((pricePerM2 * subject.surface) / 1000) * 1000,
       pricePerM2,
+      indexed: Math.round((pricePerM2 / raw) * 1000) / 1000,
       sales: comparables.length,
       radius: tier.radius,
       months: tier.months,

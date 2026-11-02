@@ -29,6 +29,17 @@ test("toSales keeps apartment+cellar sales and drops multi-unit or mixed mutatio
   assert.equal(sales[0].price / sales[0].surface, 10_000);
 });
 
+test("toSales prices on the Carrez surface, unless it's implausible", () => {
+  const h = `${HEADER},lot1_surface_carrez,lot2_surface_carrez`;
+  const sales = toSales(parseCsv([
+    h,
+    "m1,2025-01-02,Vente,300000,X,Appartement,30,2,2.37,48.86,28.5,",
+    "m2,2025-01-02,Vente,300000,X,Appartement,30,2,2.37,48.86,5,",
+    "m3,2025-01-02,Vente,300000,X,Appartement,30,2,2.37,48.86,,",
+  ].join("\n")));
+  assert.deepEqual(sales.map((s) => s.surface), [28.5, 30, 30]);
+});
+
 const at = (i: number, overrides: Partial<Sale> = {}): Sale => ({
   id: `s${i}`, date: "2025-06-01", price: 10_000 * 40, surface: 40, rooms: 2, lat: 48.86, lon: 2.37, ...overrides,
 });
@@ -59,4 +70,13 @@ test("too few comparables widens to 24 months, then to twice the radius", () => 
 test("rooms filter drops units more than one room away", () => {
   const studios = Array.from({ length: 40 }, (_, i) => at(i, { rooms: 0, price: 1 }));
   assert.equal(estimate(studios, subject), null);
+});
+
+test("comparables are indexed to the level of the newest six months", () => {
+  // Nearby sales in Q1 at 9 000 €/m²; the market (far away, still in the index) at 10 000 in H2.
+  const q1 = Array.from({ length: MIN_SALES }, (_, i) => at(i, { date: "2025-02-01", price: 9_000 * 40 }));
+  const h2 = Array.from({ length: 30 }, (_, i) => at(100 + i, { date: "2025-11-01", lat: 49.5 }));
+  const e = estimate([...q1, ...h2], subject)!;
+  assert.equal(e.pricePerM2, 10_000);
+  assert.equal(e.indexed, 1.111);
 });

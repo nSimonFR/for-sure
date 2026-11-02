@@ -344,6 +344,10 @@ It holds a home address: deploy it as a secret, never in the Nix store.
 **Estimate.** A comparable is a `Vente` mutation containing exactly one
 `Appartement` (plus only `Dépendance` or untyped parcel rows), with a price,
 a built surface and coordinates, and — if `rooms` is set — within ±1 room.
+A sale's surface is its Carrez area when the deed gives a plausible one
+(within ±40 % of the built surface), else `surface_reelle_bati`; the config's
+`surface` is Carrez too. Each comparable's €/m² is indexed to the newest six
+months by a quarterly median over every sale fetched (whole communes).
 The window ends at the newest sale in the data (DVF lags ~6 months). Tiers,
 first with ≥ 15 comparables wins: radius × 12 months, radius × 24 months,
 2 × radius × 24 months; none → `500`. Value = median(price / surface) × surface,
