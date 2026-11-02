@@ -330,7 +330,9 @@ track it like a bank balance. Enabled only when `DVF_PROPERTY_FILE` is set;
 otherwise it contributes no account.
 
 **Config file.** JSON, read on every request:
-`{ "name"?: string, "address": string, "surface": m², "rooms"?: number, "radius"?: m (default 500), "communes"?: INSEE codes }`.
+`{ "name"?: string, "address": string, "surface": m², "rooms"?: number, "radius"?: m (default 500), "communes"?: INSEE codes, "adjust"?: number }`.
+`adjust` multiplies the value (not the reported €/m²) to calibrate for what DVF
+can't see — floor, condition — against an external estimate.
 It holds a home address: deploy it as a secret, never in the Nix store.
 
 **Upstream.** No auth.

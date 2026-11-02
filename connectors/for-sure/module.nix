@@ -47,7 +47,7 @@ in
       default     = null;
       description = ''
         JSON file describing one French property, valued from DVF sales:
-        { name?, address, surface, rooms?, radius? (m, default 500), communes? }.
+        { name?, address, surface, rooms?, radius? (m, default 500), communes?, adjust? }.
         Exposed to Sure as the `dvf:property` account. Keep it out of the store (it holds an address).
       '';
     };
