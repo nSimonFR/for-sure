@@ -24,12 +24,13 @@ Be sure to check https://github.com/nSimonFR/sure-nix too !
 ```
 package.json                       # npm workspace root (workspaces: packages/*, connectors/*)
 packages/lunchflow/                # shared HTTP server + router + types (@for-sure/lunchflow)
-connectors/for-sure/               # combined Swile + Sumeria connector, ships the `for-sure` bin
+connectors/for-sure/               # combined Swile + Sumeria + DVF connector, ships the `for-sure` bin
   flake.nix / package.nix          # buildNpmPackage from the monorepo root
   module.nix                       # NixOS module: services.for-sure
   src/{config,index,notify,setup}.ts
   src/swile/{auth,client,config,setup,types,handlers/*}.ts
   src/sumeria/{auth,client,config,setup,types,handlers/*}.ts
+  src/dvf/{client,config,estimate,handlers/*}.ts   # property value from French DVF sales
 scripts/                           # Python + Ruby one-shot CSV import helpers for Sure
 ```
 

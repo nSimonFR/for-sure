@@ -4,6 +4,7 @@ import { runSetup } from "./setup.js";
 import type { LunchflowHandlers, LunchflowAccount } from "@for-sure/lunchflow/types";
 import * as swile from "./swile/handlers/index.js";
 import * as sumeria from "./sumeria/handlers/index.js";
+import * as dvf from "./dvf/handlers/index.js";
 
 function withPrefix(prefix: string, items: LunchflowAccount[]): LunchflowAccount[] {
   return items.map((item) => ({ ...item, id: `${prefix}:${item.id}` }));
@@ -17,28 +18,36 @@ function strip(prefix: string, id: string): string {
 
 const handlers: LunchflowHandlers = {
   async getAccounts() {
-    const [swileAccts, sumeriaAccts] = await Promise.all([
+    const [swileAccts, sumeriaAccts, dvfAccts] = await Promise.all([
       swile.getAccounts(),
       sumeria.getAccounts(),
+      dvf.getAccounts(),
     ]);
-    return [...withPrefix("swile", swileAccts), ...withPrefix("sumeria", sumeriaAccts)];
+    return [
+      ...withPrefix("swile", swileAccts),
+      ...withPrefix("sumeria", sumeriaAccts),
+      ...withPrefix("dvf", dvfAccts),
+    ];
   },
 
   async getTransactions(accountId) {
     if (accountId.startsWith("swile:"))   return swile.getTransactions(strip("swile", accountId));
     if (accountId.startsWith("sumeria:")) return sumeria.getTransactions(strip("sumeria", accountId));
+    if (accountId.startsWith("dvf:"))     return dvf.getTransactions(strip("dvf", accountId));
     throw Object.assign(new Error("Unknown account"), { statusCode: 404 });
   },
 
   async getBalance(accountId) {
     if (accountId.startsWith("swile:"))   return swile.getBalance(strip("swile", accountId));
     if (accountId.startsWith("sumeria:")) return sumeria.getBalance(strip("sumeria", accountId));
+    if (accountId.startsWith("dvf:"))     return dvf.getBalance(strip("dvf", accountId));
     throw Object.assign(new Error("Unknown account"), { statusCode: 404 });
   },
 
   async getHoldings(accountId) {
     if (accountId.startsWith("swile:"))   return swile.getHoldings(strip("swile", accountId));
     if (accountId.startsWith("sumeria:")) return sumeria.getHoldings(strip("sumeria", accountId));
+    if (accountId.startsWith("dvf:"))     return dvf.getHoldings(strip("dvf", accountId));
     throw Object.assign(new Error("Unknown account"), { statusCode: 404 });
   },
 };

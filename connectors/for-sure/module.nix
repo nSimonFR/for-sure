@@ -5,7 +5,7 @@ let
 in
 {
   options.services.for-sure = {
-    enable = lib.mkEnableOption "for-sure Lunchflow connector (Swile + Sumeria)";
+    enable = lib.mkEnableOption "for-sure Lunchflow connector (Swile + Sumeria + DVF)";
 
     port = lib.mkOption {
       type        = lib.types.port;
@@ -42,6 +42,16 @@ in
       description = "Path to sumeria-tokens.json written by an external token extractor";
     };
 
+    dvf.propertyFile = lib.mkOption {
+      type        = lib.types.nullOr lib.types.str;
+      default     = null;
+      description = ''
+        JSON file describing one French property, valued from DVF sales:
+        { name?, address, surface, rooms?, radius? (m, default 500), communes? }.
+        Exposed to Sure as the `dvf:property` account. Keep it out of the store (it holds an address).
+      '';
+    };
+
     telegram = {
       botTokenFile = lib.mkOption {
         type        = lib.types.nullOr lib.types.str;
@@ -66,7 +76,7 @@ in
     ];
 
     systemd.services.for-sure = {
-      description = "for-sure Lunchflow connector (Swile + Sumeria)";
+      description = "for-sure Lunchflow connector (Swile + Sumeria + DVF)";
       wantedBy    = [ "multi-user.target" ];
       after       = [ "network-online.target" ];
       wants       = [ "network-online.target" ];
@@ -89,6 +99,8 @@ in
         SWILE_ACCOUNT_NAME = cfg.swile.accountName;
       } // lib.optionalAttrs (cfg.sumeria.tokenFile != null) {
         SUMERIA_TOKEN_FILE = cfg.sumeria.tokenFile;
+      } // lib.optionalAttrs (cfg.dvf.propertyFile != null) {
+        DVF_PROPERTY_FILE = cfg.dvf.propertyFile;
       } // lib.optionalAttrs (cfg.telegram.botTokenFile != null) {
         TELEGRAM_BOT_TOKEN_FILE = cfg.telegram.botTokenFile;
       } // lib.optionalAttrs (cfg.telegram.chatId != null) {
