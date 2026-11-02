@@ -83,7 +83,7 @@ export async function getEstimate(p: Property): Promise<Estimate> {
   const e = estimate(sales, { lat, lon, surface: p.surface, rooms: p.rooms, radius: p.radius });
   if (!e) throw new Error(`DVF: not enough comparable sales within ${p.radius * 2} m`);
   console.log(
-    `[dvf] ${e.pricePerM2} €/m² × ${p.surface} m² = ${e.value} € ` +
+    `[dvf] ${e.pricePerM2} €/m² (×${e.indexed} to the latest quarters) × ${p.surface} m² = ${e.value} € ` +
     `(${e.sales} sales, ${e.radius} m, ${e.from}→${e.to}, communes ${communes.join(",")})`,
   );
   cached = { key, at: Date.now(), estimate: e };
