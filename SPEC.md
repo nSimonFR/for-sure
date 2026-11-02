@@ -16,7 +16,7 @@ bug".
 ## 1. Purpose
 
 `for-sure` synchronises French neobank-style meal-voucher data sources
-(currently **Swile** and **Sumeria**) into [Sure](https://sure.am/) (a
+(currently **Swile** and **Sumeria**, plus a **DVF** property valuation) into [Sure](https://sure.am/) (a
 self-hosted Maybe Finance fork) by exposing the **Lunchflow connector
 protocol** over HTTP: accounts, transactions, and balances are fetched by
 Sure from for-sure, which fronts the upstream provider APIs.
@@ -171,13 +171,14 @@ Deliberately **not** normalised:
 
 ## 3. Account ID conventions
 
-Sure sees one for-sure endpoint but pulls from two upstream providers; the
+Sure sees one for-sure endpoint but pulls from several upstream providers; the
 discriminator visible to Sure is the **prefix on each Lunchflow account id**.
 
 | Prefix     | Source object                                   | Example                                       |
 | ---------- | ----------------------------------------------- | --------------------------------------------- |
 | `swile:`   | Swile wallet UUID                               | `swile:6f2a8c1e-3b4d-4f5a-9b1c-2e8f7a6c5d3b`  |
 | `sumeria:` | Sumeria account `emitter_id` (NOT `account_id`) | `sumeria:em_abc123...`                        |
+| `dvf:`     | The configured property (always `property`)     | `dvf:property`                                |
 
 Wire contract:
 
@@ -322,6 +323,39 @@ headers on every request: `auth_token`, `public_token`, `access-token`,
 - **Holdings.** Unsupported →
   `{ status: 501, body: { error: "Holdings not supported for Sumeria" } }`.
 
+### 4.3 DVF (property valuation)
+
+Values one French apartment from the public DVF sales register, so Sure can
+track it like a bank balance. Enabled only when `DVF_PROPERTY_FILE` is set;
+otherwise it contributes no account.
+
+**Config file.** JSON, read on every request:
+`{ "name"?: string, "address": string, "surface": m², "rooms"?: number, "radius"?: m (default 500), "communes"?: INSEE codes }`.
+It holds a home address: deploy it as a secret, never in the Nix store.
+
+**Upstream.** No auth.
+- `https://data.geopf.fr/geocodage/search` — address → lat/lon + INSEE code.
+- `https://data.geopf.fr/geocodage/reverse` — the commune at the 4 compass
+  points of twice the radius, so a circle crossing an arrondissement boundary
+  reads the neighbouring files too (skipped when `communes` is given).
+- `https://files.data.gouv.fr/geo-dvf/latest/csv/{year}/communes/{dep}/{insee}.csv`
+  for the current year and the 3 before; `404` = not published, empty.
+
+**Estimate.** A comparable is a `Vente` mutation containing exactly one
+`Appartement` (plus only `Dépendance` or untyped parcel rows), with a price,
+a built surface and coordinates, and — if `rooms` is set — within ±1 room.
+The window ends at the newest sale in the data (DVF lags ~6 months). Tiers,
+first with ≥ 15 comparables wins: radius × 12 months, radius × 24 months,
+2 × radius × 24 months; none → `500`. Value = median(price / surface) × surface,
+rounded to the nearest 1 000 €. Cached 24 h in memory.
+
+- **Accounts.** `[{ id: "property", name, balance: <last estimate or 0>, currency: "EUR" }]`.
+  Never calls upstream, and a config error yields `[]`, so DVF can't hide the
+  other providers' accounts. Sure reads the balance from `/balance` only.
+- **Balance.** `{ amount: <estimate>, currency: "EUR" }`.
+- **Transactions.** Always `[]`.
+- **Holdings.** `501`.
+
 ---
 
 ## 5. Boundaries
@@ -356,6 +390,7 @@ headers on every request: `auth_token`, `public_token`, `access-token`,
 | `SWILE_TOKEN_FILE`        | `${FOR_SURE_DATA_DIR}/swile-tokens.json`   | Swile OAuth token file (read/write by service)                                   |
 | `SWILE_ACCOUNT_NAME`      | unset                                      | Override Swile wallet label in `name` field of `/accounts` response              |
 | `SUMERIA_TOKEN_FILE`      | `${FOR_SURE_DATA_DIR}/sumeria-tokens.json` | Sumeria session-headers file (read-only by service in production)                |
+| `DVF_PROPERTY_FILE`       | unset (DVF disabled)                       | Property JSON for the DVF valuation (§4.3)                                       |
 | `TELEGRAM_BOT_TOKEN_FILE` | unset (alerts disabled)                    | Path to file containing the Telegram bot token                                   |
 | `TELEGRAM_CHAT_ID`        | unset (alerts disabled)                    | Chat ID for token-expiry alerts                                                  |
 
@@ -396,6 +431,7 @@ The shipped NixOS module exposes:
 - `apiKeyFile` (required string; path to API key file)
 - `swile.accountName` (nullable string)
 - `sumeria.tokenFile` (nullable string; points at the externally-written file)
+- `dvf.propertyFile` (nullable string; the §4.3 property JSON)
 - `telegram.botTokenFile` (nullable string)
 - `telegram.chatId` (nullable string)
 
