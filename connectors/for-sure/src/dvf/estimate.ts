@@ -16,6 +16,7 @@ export interface Subject {
   surface: number;       // Carrez, as on a deed or listing
   rooms?: number;
   radius: number;        // metres
+  adjust?: number;       // calibration for what DVF can't see (floor, condition), e.g. 1.026
 }
 
 export interface Estimate {
@@ -155,7 +156,7 @@ export function estimate(sales: Sale[], subject: Subject): Estimate | null {
     const raw = median(comparables.map((s) => s.price / s.surface));
     const pricePerM2 = Math.round(median(comparables.map((s) => (s.price / s.surface) * (index.latest / index.level(s.date)))));
     return {
-      value: Math.round((pricePerM2 * subject.surface) / 1000) * 1000,
+      value: Math.round((pricePerM2 * subject.surface * (subject.adjust ?? 1)) / 1000) * 1000,
       pricePerM2,
       indexed: Math.round((pricePerM2 / raw) * 1000) / 1000,
       sales: comparables.length,

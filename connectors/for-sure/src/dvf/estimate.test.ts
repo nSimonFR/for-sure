@@ -80,3 +80,10 @@ test("comparables are indexed to the level of the newest six months", () => {
   assert.equal(e.pricePerM2, 10_000);
   assert.equal(e.indexed, 1.111);
 });
+
+test("adjust scales the value, not the market €/m²", () => {
+  const sales = Array.from({ length: MIN_SALES }, (_, i) => at(i));
+  const e = estimate(sales, { ...subject, adjust: 1.026 })!;
+  assert.equal(e.pricePerM2, 10_000);
+  assert.equal(e.value, 513_000);
+});
